@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String    @id @default(cuid())
+  clerkId           String    @unique
+  email             String    @unique
+  name              String?
+  tier              String    @default("free")
+  stripeCustomerId  String?   @unique
+  stripeSubId       String?
+  metaPixelId       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  players           Player[]
+  integrations      Integration[]
+  wordpressSites    WordPressSite[]
+  shopifyStores     ShopifyStore[]
+  viewers           Viewer[]
+  leads             LeadCapture[]
+}
+
+model Player {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name              String
+  youtubeVideoId    String
+  thumbnailUrl      String?
+  brandingConfig    Json      @default("{}")
+  ctaConfig         Json      @default("{}")
+  
+  isInstalled       Boolean   @default(false)
+  installationType  String?
+  
+  playCount         Int       @default(0)
+  totalWatchTime    Int       @default(0)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  analytics         AnalyticsEvent[]
+  viewerSessions    ViewerSession[]
+  ctaClicks         CtaClick[]
+}
+
+model AnalyticsEvent {
+  id                String    @id @default(cuid())
+  playerId          String
+  player            Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  
+  eventType         String
+  currentTime       Int?
+  duration          Int?
+  watchPercent      Float?
+  
+  userAgent         String?
+  ipHash            String?
+  country           String?
+  deviceType        String?
+  
+  createdAt         DateTime  @default(now())
+
+  @@index([playerId, createdAt])
+}
+
+model Viewer {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  anonymousId       String    @unique
+  email             String?
+  ipHash            String?
+  userAgent         String?
+  deviceType        String?
+  country           String?
+  city              String?
+  
+  createdAt         DateTime  @default(now())
+  
+  sessions          ViewerSession[]
+}
+
+model ViewerSession {
+  id                String    @id @default(cuid())
+  viewerId          String
+  viewer            Viewer    @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+  playerId          String
+  player            Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  
+  sessionStart      DateTime  @default(now())
+  sessionEnd        DateTime?
+  ipHash            String?
+  
+  utmSource         String?
+  utmMedium         String?
+  utmCampaign       String?
+  referrer          String?
+  
+  watchEvents       WatchEvent[]
+
+  @@index([playerId, sessionStart])
+}
+
+model WatchEvent {
+  id                String    @id @default(cuid())
+  sessionId         String
+  session           ViewerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  eventType         String
+  currentTime       Int
+  duration          Int
+  watchPercent      Float
+  
+  createdAt         DateTime  @default(now())
+}
+
+model CtaClick {
+  id                String    @id @default(cuid())
+  playerId          String
+  player            Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  
+  ctaType           String
+  ctaText           String?
+  ctaUrl            String?
+  
+  viewerId          String?
+  ipHash            String?
+  
+  createdAt         DateTime  @default(now())
+
+  @@index([playerId, createdAt])
+}
+
+model LeadCapture {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  playerId          String?
+  viewerId          String?
+  
+  email             String
+  name              String?
+  customFields      Json?
+  
+  ipHash            String?
+  userAgent         String?
+  
+  createdAt         DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model WordPressSite {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  siteUrl           String
+  siteName          String?
+  apiKey            String    @unique
+  isVerified        Boolean   @default(false)
+  
+  createdAt         DateTime  @default(now())
+}
+
+model ShopifyStore {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  shopDomain        String    @unique
+  shopName          String?
+  accessToken       String
+  isVerified        Boolean   @default(false)
+  
+  createdAt         DateTime  @default(now())
+}
+
+model Integration {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  type              String
+  name              String
+  config            Json
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([userId, type])
+}
