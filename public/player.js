@@ -45,14 +45,24 @@
       this.init();
     }
 
-    extractVideoId() {
-      const src = this.iframe.src || '';
-      log.debug('Extracting video ID from:', src);
-      const match = src.match(/[?&]v=([^&#]+)/);
-      const videoId = match ? match[1] : null;
-      log.debug('Extracted video ID:', videoId);
-      return videoId;
+  extractVideoId() {
+    const src = this.iframe?.src || '';
+    log.debug('Extracting video ID from:', src);
+    // 1) Try embed path first: /embed/{videoId}
+    let m = src.match(/embed\/([a-zA-Z0-9_-]+)(?:[?#&/]|$)/);
+    if (m && m[1]) {
+      log.debug('Extracted video ID from embed path:', m[1]);
+      return m[1];
     }
+    // 2) Fallback to v parameter (older formats)
+    m = src.match(/[?&]v=([^&#]+)/);
+    if (m && m[1]) {
+      log.debug('Extracted video ID from v parameter:', m[1]);
+      return m[1];
+    }
+    log.warn('Video ID not found in embed URL', { src });
+    return null;
+  }
 
     async init() {
       if (!this.videoId) {
