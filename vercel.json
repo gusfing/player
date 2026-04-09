@@ -4,5 +4,8 @@
       "path": "/api/integrations/webhooks/cleanup",
       "schedule": "0 0 * * *"
     }
-  ]
+  ],
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install"
 }
