@@ -864,18 +864,18 @@
     async init() {
       log.info('YouTube Shell initializing...');
       
-      const script = document.currentScript;
+      let script = document.currentScript;
       if (!script) {
-        log.error('No script element found - script might be loaded asynchronously');
-        // Try to find the script by our identifier
+        log.warn('No currentScript found - searching for player script...');
+        // Try to find the script by our identifier (async/deferred scripts don't set currentScript)
         const scripts = document.querySelectorAll('script[src*="player"]');
         if (scripts.length > 0) {
-          log.debug('Found player script:', scripts[0].src);
+          script = scripts[0];
+          log.debug('Found player script:', script.src);
         }
-        return;
       }
 
-      this.siteId = script.getAttribute('data-site-id');
+      this.siteId = script?.getAttribute('data-site-id');
       if (!this.siteId) {
         log.error('Missing data-site-id attribute on script tag');
         return;
