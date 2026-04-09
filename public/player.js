@@ -63,8 +63,9 @@
       log.info('Initializing player for video:', this.videoId);
       
       try {
-        log.debug('Fetching config from:', `${CONFIG_ENDPOINT}/${this.siteId}`);
-        const response = await fetch(`${CONFIG_ENDPOINT}/${this.siteId}`);
+        const domainParam = `?domain=${encodeURIComponent(window.location.host)}`;
+        log.debug('Fetching config from:', `${CONFIG_ENDPOINT}/${this.siteId}${domainParam}`);
+        const response = await fetch(`${CONFIG_ENDPOINT}/${this.siteId}${domainParam}`);
         
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -338,6 +339,7 @@
           name: formData.get('name') || null,
           phone: formData.get('phone') || null,
           url: window.location.href,
+          domain: window.location.host,
         };
 
         try {
@@ -526,6 +528,7 @@
           name: formData.get('name') || null,
           phone: formData.get('phone') || null,
           url: window.location.href,
+          domain: window.location.host,
         };
 
         try {
@@ -713,6 +716,7 @@
         event,
         url: window.location.href,
         referrer: document.referrer,
+        domain: window.location.host,
         timestamp: new Date().toISOString(),
         ...data,
       };
