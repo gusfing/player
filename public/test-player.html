@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Shell Player Test</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 { color: #333; }
+    .test-section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .instructions {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .instructions h3 { margin-top: 0; }
+    .instructions code {
+      background: #bbdefb;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>YouTube Shell Player Test Page</h1>
+  
+  <div class="instructions">
+    <h3>Testing Instructions:</h3>
+    <ol>
+      <li>Open Chrome DevTools (F12) and check the Console tab</li>
+      <li>Look for <code>[YT Shell]</code> log messages</li>
+      <li>Add <code>?debug=true</code> to the URL to see the debug panel</li>
+      <li>Click on the video to test tracking</li>
+    </ol>
+  </div>
+  
+  <div class="test-section">
+    <h2>Test 1: Standard YouTube Embed</h2>
+    <p>This should be detected and replaced by YouTube Shell:</p>
+    <iframe 
+      width="560" 
+      height="315" 
+      src="https://www.youtube.com/embed/dQw4w9WgXcQ" 
+      title="YouTube video player" 
+      frameborder="0" 
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+      allowfullscreen>
+    </iframe>
+  </div>
+  
+  <div class="test-section">
+    <h2>Test 2: Another YouTube Video</h2>
+    <p>This should also be detected:</p>
+    <iframe 
+      width="560" 
+      height="315" 
+      src="https://www.youtube.com/embed/jNQXAC9IVRw" 
+      title="YouTube video player" 
+      frameborder="0" 
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+      allowfullscreen>
+    </iframe>
+  </div>
+
+  <!-- Load the player.js from localhost for testing -->
+  <script src="http://localhost:3000/player.min.js" data-site-id="test-site-123"></script>
+  
+  <!-- Or load from production -->
+  <!-- <script src="https://shrazen.com/player.min.js" data-site-id="cmnqy1jrg0003v7rgx1vkcxqo"></script> -->
+</body>
+</html>

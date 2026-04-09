@@ -1,8 +1,34 @@
+"use client"
+
 import Link from "next/link"
+import { useUser } from "@clerk/nextjs"
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Play, BarChart3, Zap, Code2 } from "lucide-react"
 
 export default function HomePage() {
+  const { user, isLoaded } = useUser()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (isLoaded && user) {
+      router.push("/dashboard")
+    }
+  }, [isLoaded, user, router])
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-pulse">Loading...</div>
+      </div>
+    )
+  }
+
+  if (user) {
+    return null
+  }
+
   return (
     <div className="min-h-screen bg-white">
       {/* Header */}

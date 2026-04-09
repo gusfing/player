@@ -10,7 +10,7 @@ export default function SignupPage() {
           <h1 className="text-2xl font-bold">YouTube Shell</h1>
           <p className="text-gray-500 mt-2">Create your account</p>
         </div>
-        <SignUp />
+        <SignUp routing="hash" />
       </div>
     </div>
   )

@@ -8,196 +8,188 @@ datasource db {
 }
 
 model User {
-  id                String    @id @default(cuid())
-  clerkId           String    @unique
-  email             String    @unique
-  name              String?
-  tier              String    @default("free")
-  stripeCustomerId  String?   @unique
-  stripeSubId       String?
-  metaPixelId       String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  id                  String    @id @default(cuid())
+  clerkId             String    @unique
+  email               String    @unique
+  name                String?
+  tier                String    @default("free")
+  stripeCustomerId    String?   @unique
+  stripeSubId         String?
 
-  players           Player[]
-  integrations      Integration[]
-  wordpressSites    WordPressSite[]
-  shopifyStores     ShopifyStore[]
-  viewers           Viewer[]
-  leads             LeadCapture[]
+  masterApiKey        String    @unique @default(cuid())
+  
+  globalBrandingConfig Json     @default("{}")
+  globalCtaConfig      Json     @default("{}")
+  globalMetaPixelId   String?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  installations       Installation[]
+  leads               LeadCapture[]
+  webhooks            Webhook[]
+  googleAnalytics     GoogleAnalytics?
 }
 
-model Player {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Installation {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  name              String
-  youtubeVideoId    String
-  thumbnailUrl      String?
-  brandingConfig    Json      @default("{}")
-  ctaConfig         Json      @default("{}")
+  domain              String
+  platform            String    // "wordpress" | "shopify" | "custom"
+  status              String    @default("pending")  // "pending" | "active" | "disconnected" | "deleted"
   
-  isInstalled       Boolean   @default(false)
-  installationType  String?
+  apiKey              String    @unique
   
-  playCount         Int       @default(0)
-  totalWatchTime    Int       @default(0)
+  brandingConfig      Json      @default("{}")
+  ctaConfig           Json      @default("{}")
+  metaPixelId         String?
+  googleAnalyticsId   String?
+  debugMode           String    @default("inherit")  // "inherit" | "enabled" | "disabled"
   
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  allowedDomains      Json      @default("[]")  // Array of domains
+  
+  totalPlays          Int       @default(0)
+  totalViews          Int       @default(0)
+  
+  pluginVersion       String?
+  lastHeartbeatAt     DateTime?
+  lastActivityAt      DateTime?
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  analytics         AnalyticsEvent[]
-  viewerSessions    ViewerSession[]
-  ctaClicks         CtaClick[]
+  analytics           SiteAnalytics[]
+  leads               LeadCapture[]
+
+  @@unique([userId, domain])
+  @@index([userId, status])
+  @@index([lastHeartbeatAt])
+  @@index([apiKey])
 }
 
-model AnalyticsEvent {
-  id                String    @id @default(cuid())
-  playerId          String
-  player            Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+model SiteAnalytics {
+  id                  String    @id @default(cuid())
+  installationId      String
+  installation        Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
   
-  eventType         String
-  currentTime       Int?
-  duration          Int?
-  watchPercent      Float?
+  eventType           String    // "video_played", "video_progress", etc
+  youtubeVideoId      String?
+  youtubeUrl          String?
   
-  userAgent         String?
-  ipHash            String?
-  country           String?
-  deviceType        String?
+  viewerId            String?
+  anonymousId         String?
   
-  createdAt         DateTime  @default(now())
+  currentTime         Int?
+  duration            Int?
+  watchPercent        Float?
+  
+  ipHash              String?
+  userAgent           String?
+  deviceType          String?
+  country             String?
+  
+  referrer            String?
+  utmSource           String?
+  utmMedium           String?
+  utmCampaign         String?
+  
+  metadata            Json?
+  
+  createdAt           DateTime  @default(now())
 
-  @@index([playerId, createdAt])
-}
-
-model Viewer {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  anonymousId       String    @unique
-  email             String?
-  ipHash            String?
-  userAgent         String?
-  deviceType        String?
-  country           String?
-  city              String?
-  
-  createdAt         DateTime  @default(now())
-  
-  sessions          ViewerSession[]
-}
-
-model ViewerSession {
-  id                String    @id @default(cuid())
-  viewerId          String
-  viewer            Viewer    @relation(fields: [viewerId], references: [id], onDelete: Cascade)
-  playerId          String
-  player            Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  
-  sessionStart      DateTime  @default(now())
-  sessionEnd        DateTime?
-  ipHash            String?
-  
-  utmSource         String?
-  utmMedium         String?
-  utmCampaign       String?
-  referrer          String?
-  
-  watchEvents       WatchEvent[]
-
-  @@index([playerId, sessionStart])
-}
-
-model WatchEvent {
-  id                String    @id @default(cuid())
-  sessionId         String
-  session           ViewerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  
-  eventType         String
-  currentTime       Int
-  duration          Int
-  watchPercent      Float
-  
-  createdAt         DateTime  @default(now())
-}
-
-model CtaClick {
-  id                String    @id @default(cuid())
-  playerId          String
-  player            Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  
-  ctaType           String
-  ctaText           String?
-  ctaUrl            String?
-  
-  viewerId          String?
-  ipHash            String?
-  
-  createdAt         DateTime  @default(now())
-
-  @@index([playerId, createdAt])
+  @@index([installationId, createdAt])
 }
 
 model LeadCapture {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(cuid())
+  installationId      String
+  installation        Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  playerId          String?
-  viewerId          String?
+  email               String
+  name                String?
+  customFields        Json?
   
-  email             String
-  name              String?
-  customFields      Json?
+  submissionCount     Int       @default(1)
+  lastSubmittedAt     DateTime  @default(now())
   
-  ipHash            String?
-  userAgent         String?
+  ipHash              String?
+  userAgent           String?
   
-  createdAt         DateTime  @default(now())
-
-  @@index([userId, createdAt])
+  createdAt           DateTime  @default(now())
+  
+  @@unique([installationId, email])
+  @@index([installationId, createdAt])
 }
 
-model WordPressSite {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model Webhook {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
-  siteUrl           String
-  siteName          String?
-  apiKey            String    @unique
-  isVerified        Boolean   @default(false)
+  name      String
+  url       String
+  secret    String   // Auto-generated HMAC secret
+  events    String[] // ["video_played", "lead_captured", etc]
+  enabled   Boolean  @default(true)
   
-  createdAt         DateTime  @default(now())
+  consecutiveFailures Int  @default(0)
+  lastFailureAt     DateTime?
+  
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  
+  deliveries WebhookDelivery[]
+  stats     WebhookStats?
+  
+  @@index([userId])
+  @@index([userId, enabled])
 }
 
-model ShopifyStore {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model WebhookDelivery {
+  id          String   @id @default(cuid())
+  webhookId   String
+  webhook     Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
   
-  shopDomain        String    @unique
-  shopName          String?
-  accessToken       String
-  isVerified        Boolean   @default(false)
+  event       String
+  payload     Json
+  status      String   // "pending" | "success" | "failed"
+  attempts    Int      @default(0)
+  lastError   String?
   
-  createdAt         DateTime  @default(now())
+  createdAt   DateTime @default(now())
+  
+  @@index([webhookId, createdAt])
+  @@index([webhookId, status])
 }
 
-model Integration {
-  id                String    @id @default(cuid())
-  userId            String
-  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model WebhookStats {
+  id            String   @id @default(cuid())
+  webhookId     String   @unique
+  webhook       Webhook  @relation(fields: [webhookId], references: [id], onDelete: Cascade)
   
-  type              String
-  name              String
-  config            Json
+  successCount  Int      @default(0)
+  failureCount  Int      @default(0)
   
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  lastStatus    String?
+  lastAttempt   DateTime?
+  
+  @@index([webhookId])
+}
 
-  @@unique([userId, type])
+model GoogleAnalytics {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  measurementId   String   // G-XXXXXXXXXX
+  apiSecret       String   // GA4 Measurement Protocol API secret
+  
+  enabled         Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }

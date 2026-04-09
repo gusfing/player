@@ -1,5 +1,63 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
+import { isLocalhost, shouldSkipDomainValidation } from "@/utils/domainValidation"
+import { getCorsHeaders, addCorsHeaders } from "@/lib/cors"
+
+export async function OPTIONS(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const origin = request.headers.get("origin")
+  const { id } = await params
+
+  try {
+    const installation = await prisma.installation.findUnique({
+      where: { id },
+      select: { allowedDomains: true },
+    })
+
+    const allowedDomains = (installation?.allowedDomains as string[]) || []
+    
+    if (allowedDomains.length === 0) {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "GET, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Max-Age": "86400",
+        },
+      })
+    }
+
+    const isAllowed = allowedDomains.some((domain) => {
+      const normalizedDomain = domain.toLowerCase()
+      const normalizedOrigin = origin?.toLowerCase().replace(/^https?:\/\//, "").replace(/\/$/, "") || ""
+      return (
+        normalizedOrigin === normalizedDomain ||
+        normalizedOrigin.endsWith("." + normalizedDomain)
+      )
+    })
+
+    if (!isAllowed) {
+      return new NextResponse("Origin not allowed", { status: 403 })
+    }
+
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": origin || "*",
+        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+        "Vary": "Origin",
+      },
+    })
+  } catch (error) {
+    console.error("Error handling CORS preflight:", error)
+    return new NextResponse("Internal error", { status: 500 })
+  }
+}
 
 export async function GET(
   request: Request,
@@ -7,34 +65,103 @@ export async function GET(
 ) {
   try {
     const { id } = await params
+    const url = new URL(request.url)
+    const isDashboard = url.searchParams.get("dashboard") === "true"
+    const hasDebugParam = url.searchParams.has("debug")
+    const visitorDomain = url.searchParams.get("domain") || request.headers.get("host") || ""
 
-    const player = await prisma.player.findUnique({
+    const installation = await prisma.installation.findUnique({
       where: { id },
-      include: {
-        user: {
-          select: {
-            id: true,
-            metaPixelId: true,
+    })
+
+    if (!installation) {
+      const response = NextResponse.json({ error: "Installation not found" }, { status: 404 })
+      return response
+    }
+
+    if (installation.status === "deleted") {
+      return NextResponse.json({ error: "Installation has been deleted" }, { status: 410 })
+    }
+
+    // Domain validation (skip in development)
+    if (!shouldSkipDomainValidation()) {
+      const allowedDomains = installation.allowedDomains as string[] || []
+      const normalizedVisitorDomain = visitorDomain
+        .toLowerCase()
+        .replace(/^(https?:\/\/)?(www\.)?/, "")
+        .replace(/\/$/, "")
+
+      const isAllowed =
+        allowedDomains.length === 0 ||
+        allowedDomains.some(
+          (domain) =>
+            domain.toLowerCase() === normalizedVisitorDomain ||
+            normalizedVisitorDomain.endsWith("." + domain.toLowerCase())
+        )
+
+      if (!isAllowed && !isLocalhost(visitorDomain)) {
+        return NextResponse.json(
+          {
+            error: "Domain not allowed",
+            message: `This player is not authorized for ${visitorDomain}. Please check your allowed domains.`,
           },
-        },
+          { status: 403 }
+        )
+      }
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: installation.userId },
+      include: {
+        googleAnalytics: true,
       },
     })
 
-    if (!player) {
-      return NextResponse.json({ error: "Player not found" }, { status: 404 })
+    const brandingConfig = {
+      ...((user?.globalBrandingConfig as Record<string, unknown>) || {}),
+      ...((installation.brandingConfig as Record<string, unknown>) || {}),
     }
 
-    // Return minimal config for client-side use
-    const config = {
-      id: player.id,
-      youtubeVideoId: player.youtubeVideoId,
-      thumbnailUrl: player.thumbnailUrl,
-      brandingConfig: player.brandingConfig,
-      ctaConfig: player.ctaConfig,
-      metaPixelId: player.user.metaPixelId,
+    const ctaConfig = {
+      ...((user?.globalCtaConfig as Record<string, unknown>) || {}),
+      ...((installation.ctaConfig as Record<string, unknown>) || {}),
     }
 
-    return NextResponse.json(config)
+    // Resolve Pixel ID (domain override → account fallback)
+    const resolvedPixelId = installation.metaPixelId || user?.globalMetaPixelId || null
+
+    // Resolve GA4 ID (domain override → account fallback)
+    const resolvedGA4Id = installation.googleAnalyticsId || user?.googleAnalytics?.measurementId || null
+
+    // Determine if debug mode should be active
+    const debugSetting = installation.debugMode || "inherit"
+    const isDebugEnabled =
+      debugSetting === "enabled" ||
+      (debugSetting === "inherit" && isDashboard) ||
+      hasDebugParam
+
+    const response = NextResponse.json({
+      id: installation.id,
+      domain: installation.domain,
+      platform: installation.platform,
+      brandingConfig,
+      ctaConfig,
+      metaPixelId: resolvedPixelId,
+      resolvedGA4Id,
+      resolvedPixelId,
+      debugEnabled: isDebugEnabled,
+      apiKey: installation.apiKey,
+      createdAt: installation.createdAt,
+    })
+
+    // Add CORS headers
+    const corsHeaders = await getCorsHeaders(id)
+    Object.entries(corsHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value)
+    })
+    response.headers.set("Vary", "Origin")
+
+    return response
   } catch (error) {
     console.error("Error fetching embed config:", error)
     return NextResponse.json({ error: "Failed to fetch config" }, { status: 500 })

@@ -10,7 +10,7 @@ export default function LoginPage() {
           <h1 className="text-2xl font-bold">YouTube Shell</h1>
           <p className="text-gray-500 mt-2">Sign in to your account</p>
         </div>
-        <SignIn />
+        <SignIn routing="hash" />
       </div>
     </div>
   )

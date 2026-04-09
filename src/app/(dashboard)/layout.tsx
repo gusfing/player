@@ -2,30 +2,28 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useUser, UserButton } from "@clerk/nextjs"
+import { useUser, UserButton, ClerkLoading } from "@clerk/nextjs"
 import { 
   LayoutDashboard, 
-  Play, 
+  Play,
+  Download,
   BarChart3, 
-  Code2, 
   Settings, 
   CreditCard,
   ChevronLeft,
   ChevronRight,
   Menu,
   X,
-  LogOut
+  Loader2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
-import { SignOutButton } from "@clerk/nextjs"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Players", href: "/dashboard/players", icon: Play },
+  { name: "Installations", href: "/dashboard/installations", icon: Download },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-  { name: "Installations", href: "/dashboard/installations", icon: Code2 },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
   { name: "Billing", href: "/dashboard/billing", icon: CreditCard },
 ]
@@ -41,7 +39,7 @@ export default function DashboardLayout({
   const [mobileOpen, setMobileOpen] = useState(false)
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50" suppressHydrationWarning>
       {/* Mobile menu button */}
       <button
         className="fixed top-4 left-4 z-50 lg:hidden p-2 bg-white rounded-lg shadow"
@@ -56,21 +54,22 @@ export default function DashboardLayout({
           "hidden lg:flex flex-col bg-white border-r transition-all duration-300",
           collapsed ? "w-16" : "w-64"
         )}
+        suppressHydrationWarning
       >
         {/* Logo */}
-        <div className="flex items-center justify-between h-16 px-4 border-b">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
-              <Play className="w-4 h-4 text-white" fill="white" />
+        <div className="flex items-center justify-between h-16 px-4 border-b" suppressHydrationWarning>
+          <Link href="/dashboard" className="flex items-center gap-2" suppressHydrationWarning>
+            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0" suppressHydrationWarning>
+              <Play className="w-4 h-4 text-white" fill="white" suppressHydrationWarning />
             </div>
             {!collapsed && (
-              <span className="font-bold text-lg">YouTube Shell</span>
+              <span className="font-bold text-lg" suppressHydrationWarning>YouTube Shell</span>
             )}
           </Link>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 p-3 space-y-1" suppressHydrationWarning>
           {navigation.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
             return (
@@ -83,33 +82,43 @@ export default function DashboardLayout({
                     ? "bg-primary text-primary-foreground"
                     : "text-gray-700 hover:bg-gray-100"
                 )}
+                suppressHydrationWarning
               >
-                <item.icon className="w-5 h-5 shrink-0" />
-                {!collapsed && <span>{item.name}</span>}
+                <item.icon className="w-5 h-5 shrink-0" suppressHydrationWarning />
+                {!collapsed && <span suppressHydrationWarning>{item.name}</span>}
               </Link>
             )
           })}
         </nav>
 
         {/* User Menu */}
-        <div className="p-3 border-t">
-          {isLoaded && user ? (
-            <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")}>
-              <UserButton />
+        <div className="p-3 border-t" suppressHydrationWarning>
+          <ClerkLoading>
+            <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")} suppressHydrationWarning>
+              <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" suppressHydrationWarning />
               {!collapsed && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{user.fullName || "User"}</p>
-                  <p className="text-xs text-gray-500 truncate">{user.emailAddresses[0]?.emailAddress}</p>
+                <div className="flex-1 min-w-0" suppressHydrationWarning>
+                  <div className="h-4 bg-gray-200 rounded animate-pulse mb-1" suppressHydrationWarning />
+                  <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" suppressHydrationWarning />
                 </div>
               )}
             </div>
-          ) : (
-            <div className="animate-pulse h-10 bg-gray-100 rounded" />
+          </ClerkLoading>
+          {isLoaded && user && (
+            <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")} suppressHydrationWarning>
+              <UserButton />
+              {!collapsed && (
+                <div className="flex-1 min-w-0" suppressHydrationWarning>
+                  <p className="text-sm font-medium truncate" suppressHydrationWarning>{user.fullName || "User"}</p>
+                  <p className="text-xs text-gray-500 truncate" suppressHydrationWarning>{user.emailAddresses[0]?.emailAddress}</p>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
         {/* Collapse button */}
-        <div className="p-3 border-t">
+        <div className="p-3 border-t" suppressHydrationWarning>
           <Button
             variant="ghost"
             size="sm"
@@ -123,35 +132,44 @@ export default function DashboardLayout({
 
       {/* Sidebar - Mobile */}
       {mobileOpen && (
-        <aside className="fixed inset-0 z-40 lg:hidden">
+        <aside className="fixed inset-0 z-40 lg:hidden" suppressHydrationWarning>
           <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-          <div className="relative w-64 h-full bg-white p-4">
+          <div className="relative w-64 h-full bg-white p-4" suppressHydrationWarning>
             {/* Logo */}
-            <div className="flex items-center justify-between h-16 border-b mb-4">
-              <Link href="/dashboard" className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <Play className="w-4 h-4 text-white" fill="white" />
+            <div className="flex items-center justify-between h-16 border-b mb-4" suppressHydrationWarning>
+              <Link href="/dashboard" className="flex items-center gap-2" suppressHydrationWarning>
+                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center" suppressHydrationWarning>
+                  <Play className="w-4 h-4 text-white" fill="white" suppressHydrationWarning />
                 </div>
-                <span className="font-bold text-lg">YouTube Shell</span>
+                <span className="font-bold text-lg" suppressHydrationWarning>YouTube Shell</span>
               </Link>
-              <button onClick={() => setMobileOpen(false)}>
+              <button onClick={() => setMobileOpen(false)} suppressHydrationWarning>
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* User Info */}
+            <ClerkLoading>
+              <div className="flex items-center gap-3 p-3 mb-4 bg-gray-50 rounded-lg" suppressHydrationWarning>
+                <div className="w-10 h-10 bg-gray-200 rounded-full animate-pulse" suppressHydrationWarning />
+                <div className="flex-1" suppressHydrationWarning>
+                  <div className="h-4 bg-gray-200 rounded animate-pulse mb-1" suppressHydrationWarning />
+                  <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" suppressHydrationWarning />
+                </div>
+              </div>
+            </ClerkLoading>
             {isLoaded && user && (
-              <div className="flex items-center gap-3 p-3 mb-4 bg-gray-50 rounded-lg">
-<UserButton />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{user.fullName || "User"}</p>
-                  <p className="text-xs text-gray-500 truncate">{user.emailAddresses[0]?.emailAddress}</p>
+              <div className="flex items-center gap-3 p-3 mb-4 bg-gray-50 rounded-lg" suppressHydrationWarning>
+                <UserButton />
+                <div className="flex-1 min-w-0" suppressHydrationWarning>
+                  <p className="text-sm font-medium truncate" suppressHydrationWarning>{user.fullName || "User"}</p>
+                  <p className="text-xs text-gray-500 truncate" suppressHydrationWarning>{user.emailAddresses[0]?.emailAddress}</p>
                 </div>
               </div>
             )}
 
             {/* Navigation */}
-            <nav className="space-y-1">
+            <nav className="space-y-1" suppressHydrationWarning>
               {navigation.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
                 return (
@@ -165,9 +183,10 @@ export default function DashboardLayout({
                         ? "bg-primary text-primary-foreground"
                         : "text-gray-700 hover:bg-gray-100"
                     )}
+                    suppressHydrationWarning
                   >
-                    <item.icon className="w-5 h-5" />
-                    <span>{item.name}</span>
+                    <item.icon className="w-5 h-5" suppressHydrationWarning />
+                    <span suppressHydrationWarning>{item.name}</span>
                   </Link>
                 )
               })}
@@ -177,7 +196,7 @@ export default function DashboardLayout({
       )}
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto" suppressHydrationWarning>
         {children}
       </main>
     </div>
