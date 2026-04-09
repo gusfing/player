@@ -878,8 +878,8 @@
       this.siteId = script?.getAttribute('data-site-id');
       if (!this.siteId) {
         // Plan B: last-resort fallback from global window variable
-        if (typeof window !== 'undefined' && (window as any).YT_SHELL_SITE_ID) {
-          this.siteId = (window as any).YT_SHELL_SITE_ID;
+        if (typeof window !== 'undefined' && window.YT_SHELL_SITE_ID) {
+          this.siteId = window.YT_SHELL_SITE_ID;
           log.info('Plan B: using window.YT_SHELL_SITE_ID for siteId', { siteId: this.siteId });
         } else {
           log.error('Missing data-site-id attribute on script tag');
