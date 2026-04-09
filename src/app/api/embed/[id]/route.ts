@@ -68,7 +68,37 @@ export async function GET(
     const url = new URL(request.url)
     const isDashboard = url.searchParams.get("dashboard") === "true"
     const hasDebugParam = url.searchParams.has("debug")
-    const visitorDomain = url.searchParams.get("domain") || request.headers.get("host") || ""
+    
+    // Get visitor domain from Origin header (PRIMARY) or Referer (FALLBACK)
+    const origin = request.headers.get("origin")
+    const referer = request.headers.get("referer")
+    
+    let visitorDomain = url.searchParams.get("domain") || ""
+    
+    if (!visitorDomain) {
+      // Try Origin header first (most reliable for CORS)
+      if (origin) {
+        try {
+          visitorDomain = new URL(origin).hostname
+        } catch {
+          // fallback to host if URL parsing fails
+        }
+      }
+      
+      // Fallback to Referer if Origin not available
+      if (!visitorDomain && referer) {
+        try {
+          visitorDomain = new URL(referer).hostname
+        } catch {
+          // fallback to host if URL parsing fails
+        }
+      }
+      
+      // Last resort: use host header
+      if (!visitorDomain) {
+        visitorDomain = request.headers.get("host") || ""
+      }
+    }
 
     const installation = await prisma.installation.findUnique({
       where: { id },
