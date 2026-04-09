@@ -72,16 +72,26 @@ export async function GET(
     // Get visitor domain from Origin header (PRIMARY) or Referer (FALLBACK)
     const origin = request.headers.get("origin")
     const referer = request.headers.get("referer")
+    const hostHeader = request.headers.get("host")
     
     let visitorDomain = url.searchParams.get("domain") || ""
+    
+    // DEBUG: Log all header values
+    console.log('=== YT SHELL DOMAIN DETECTION DEBUG ===')
+    console.log('Full URL:', request.url)
+    console.log('Origin header:', origin)
+    console.log('Referer header:', referer)
+    console.log('Host header:', hostHeader)
+    console.log('domain param (before logic):', visitorDomain)
     
     if (!visitorDomain) {
       // Try Origin header first (most reliable for CORS)
       if (origin) {
         try {
           visitorDomain = new URL(origin).hostname
-        } catch {
-          // fallback to host if URL parsing fails
+          console.log('Using Origin, extracted hostname:', visitorDomain)
+        } catch (e) {
+          console.log('Failed to parse Origin:', e)
         }
       }
       
@@ -89,16 +99,21 @@ export async function GET(
       if (!visitorDomain && referer) {
         try {
           visitorDomain = new URL(referer).hostname
-        } catch {
-          // fallback to host if URL parsing fails
+          console.log('Using Referer, extracted hostname:', visitorDomain)
+        } catch (e) {
+          console.log('Failed to parse Referer:', e)
         }
       }
       
       // Last resort: use host header
       if (!visitorDomain) {
-        visitorDomain = request.headers.get("host") || ""
+        visitorDomain = hostHeader || ""
+        console.log('Using Host header:', visitorDomain)
       }
     }
+    
+    console.log('Final visitorDomain:', visitorDomain)
+    console.log('=== END DEBUG ===')
 
     const installation = await prisma.installation.findUnique({
       where: { id },
