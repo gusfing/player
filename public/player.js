@@ -49,7 +49,7 @@
     const src = this.iframe?.src || '';
     log.debug('Extracting video ID from:', src);
     // 1) Try embed path first: /embed/{videoId}
-    let m = src.match(/embed\/([a-zA-Z0-9_-]+)(?:[?#&/]|$)/);
+    let m = src.match(/embed\/([a-zA-Z0-9_-]+)(?:[?#&]|$)/);
     if (m && m[1]) {
       log.debug('Extracted video ID from embed path:', m[1]);
       return m[1];
