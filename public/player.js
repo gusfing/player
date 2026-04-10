@@ -984,9 +984,12 @@
       
       let processed = 0;
       iframes.forEach(iframe => {
-        // Check if already processed
-        if (iframe.classList.contains('yt-shell-processed')) {
-          log.debug('Skipping already processed iframe');
+        // Check if already processed with a valid wrapper
+        const parent = iframe.parentElement;
+        const alreadyFixed = parent?.classList?.contains('yt-shell-wrapper');
+        
+        if (alreadyFixed) {
+          log.debug('Skipping already fixed iframe (wrapper exists)');
           return;
         }
         
