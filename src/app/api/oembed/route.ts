@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db"
 // Auto-discovers videos on Skool, Circle, Mighty Networks when URL is pasted
 // https://oembed.com/ - Standard format specification
 
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 export async function GET(request: Request) {
   try {

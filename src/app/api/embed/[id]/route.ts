@@ -4,7 +4,7 @@ import { isLocalhost, shouldSkipDomainValidation } from "@/utils/domainValidatio
 import { getCorsHeaders, addCorsHeaders } from "@/lib/cors"
 
 // Edge runtime for global caching - critical for Kajabi/ClickFunnels performance
-export const runtime = "edge"
+export const runtime = "nodejs"
 
 // Cache config at the edge for 60 seconds
 const revalidate = 60
