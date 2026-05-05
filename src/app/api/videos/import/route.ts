@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { importYouTubeVideo } from "@/lib/youtube"
+import { Prisma } from "@prisma/client"
 
 const MOCK_USER = {
   id: "user_2test1234567890",
@@ -33,14 +34,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "YouTube URL is required" }, { status: 400 })
     }
 
-    // Import video metadata from YouTube
     const videoInfo = await importYouTubeVideo(url, process.env.YOUTUBE_API_KEY)
 
     if (!videoInfo) {
       return NextResponse.json({ error: "Invalid YouTube URL or video not found" }, { status: 400 })
     }
 
-    // Check if video already exists for this user
     const existingVideo = await prisma.video.findFirst({
       where: {
         userId: user.id,
@@ -55,7 +54,6 @@ export async function POST(request: Request) {
       }, { status: 409 })
     }
 
-    // Create the video record
     const video = await prisma.video.create({
       data: {
         userId: user.id,
@@ -65,7 +63,7 @@ export async function POST(request: Request) {
         duration: videoInfo.duration,
         installationId: installationId || null,
         playerConfig: {},
-        gateConfig: null,
+        gateConfig: Prisma.JsonNull,
       },
     })
 

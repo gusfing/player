@@ -57,7 +57,7 @@ export function isValidYouTubeVideoId(videoId: string): boolean {
 /**
  * Get thumbnail URL for a YouTube video
  */
-export function getYouTubeThumbnail(videoId: string, quality: "default" | "medium" | "high" | "max" | "start" | "middle" | "end" = "maxresdefault"): string {
+export function getYouTubeThumbnail(videoId: string, quality: "default" | "medium" | "high" | "max" | "start" | "middle" | "end" = "max"): string {
   const qualities: Record<string, string> = {
     default: "default.jpg",
     medium: "mqdefault.jpg",
