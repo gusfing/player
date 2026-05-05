@@ -3,12 +3,13 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useUser, UserButton, ClerkLoading } from "@clerk/nextjs"
-import { 
-  LayoutDashboard, 
+import {
+  LayoutDashboard,
   Play,
   Download,
-  BarChart3, 
-  Settings, 
+  Video,
+  BarChart3,
+  Settings,
   CreditCard,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +23,7 @@ import { useState } from "react"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Videos", href: "/dashboard/videos", icon: Video },
   { name: "Installations", href: "/dashboard/installations", icon: Download },
   { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { name: "Settings", href: "/dashboard/settings", icon: Settings },
@@ -104,13 +106,23 @@ export default function DashboardLayout({
               )}
             </div>
           </ClerkLoading>
-          {isLoaded && user && (
+          {isLoaded && user ? (
             <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")} suppressHydrationWarning>
               <UserButton />
               {!collapsed && (
                 <div className="flex-1 min-w-0" suppressHydrationWarning>
                   <p className="text-sm font-medium truncate" suppressHydrationWarning>{user.fullName || "User"}</p>
                   <p className="text-xs text-gray-500 truncate" suppressHydrationWarning>{user.emailAddresses[0]?.emailAddress}</p>
+                </div>
+              )}
+            </div>
+          ) : isLoaded && !user && (
+            <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")} suppressHydrationWarning>
+              <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xs" suppressHydrationWarning>TU</div>
+              {!collapsed && (
+                <div className="flex-1 min-w-0" suppressHydrationWarning>
+                  <p className="text-sm font-medium truncate" suppressHydrationWarning>Test User</p>
+                  <p className="text-xs text-gray-500 truncate" suppressHydrationWarning>test@example.com</p>
                 </div>
               )}
             </div>

@@ -2,13 +2,19 @@ import { NextResponse } from "next/server"
 import Stripe from "stripe"
 import { prisma } from "@/lib/db"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2026-03-25.dahlia",
-})
+// Initialize Stripe only if secret key is available
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY
+const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET!
+const stripe = stripeSecretKey ? new Stripe(stripeSecretKey, {
+  apiVersion: "2026-03-25.dahlia",
+}) : null
 
 export async function POST(request: Request) {
+  if (!stripe || !stripeWebhookSecret) {
+    return NextResponse.json({ error: "Stripe not configured" }, { status: 503 })
+  }
+
   const body = await request.text()
   const signature = request.headers.get("stripe-signature")
 
@@ -19,7 +25,7 @@ export async function POST(request: Request) {
   let event: Stripe.Event
 
   try {
-    event = stripe.webhooks.constructEvent(body, signature, webhookSecret)
+    event = stripe.webhooks.constructEvent(body, signature, stripeWebhookSecret)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error"
     console.error("Webhook signature verification failed:", message)

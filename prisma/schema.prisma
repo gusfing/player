@@ -17,10 +17,11 @@ model User {
   stripeSubId         String?
 
   masterApiKey        String    @unique @default(cuid())
-  
+
   globalBrandingConfig Json     @default("{}")
   globalCtaConfig      Json     @default("{}")
   globalMetaPixelId   String?
+  globalWatermarkUrl  String?
 
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -29,6 +30,8 @@ model User {
   leads               LeadCapture[]
   webhooks            Webhook[]
   googleAnalytics     GoogleAnalytics?
+  videos              Video[]
+  folders             Folder[]
 }
 
 model Installation {
@@ -62,6 +65,7 @@ model Installation {
 
   analytics           SiteAnalytics[]
   leads               LeadCapture[]
+  videos              Video[]
 
   @@unique([userId, domain])
   @@index([userId, status])
@@ -192,4 +196,56 @@ model GoogleAnalytics {
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model Video {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installationId      String?
+  installation        Installation? @relation(fields: [installationId], references: [id], onDelete: SetNull)
+
+  youtubeVideoId      String
+  title               String
+  thumbnailUrl        String?
+  customThumbnailUrl  String?
+  duration            Int?
+
+  folderId            String?
+  folder              Folder?   @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  tags                String[]  @default([])
+
+  playerConfig        Json      @default("{}")
+  gateConfig          Json?
+
+  totalViews          Int       @default(0)
+  totalLeads          Int       @default(0)
+  retentionData       Json?
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([userId, youtubeVideoId])
+  @@index([userId, folderId])
+  @@index([userId])
+  @@index([youtubeVideoId])
+}
+
+model Folder {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  color       String   @default("#6366f1")
+  sortOrder   Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  videos      Video[]
+
+  @@unique([userId, name])
+  @@index([userId])
 }

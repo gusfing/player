@@ -175,7 +175,7 @@ export default function InstallationSettingsPage({ params }: { params: Promise<{
       .replace(/^(https?:\/\/)?(www\.)?/, "")
       .replace(/\/$/, "")
     
-    let finalAllowedDomains = [...formData.allowedDomains]
+    const finalAllowedDomains = [...formData.allowedDomains]
     if (normalizedMainDomain && !finalAllowedDomains.includes(normalizedMainDomain)) {
       finalAllowedDomains.unshift(normalizedMainDomain)
     }

@@ -25,17 +25,19 @@ export async function POST(request: Request) {
   try {
     const origin = request.headers.get("origin")
     const ip = getClientIP(request)
-    
-    const { success } = await publicRateLimit.limit(ip)
-    
-    if (!success) {
-      const response = NextResponse.json(
-        { error: "Too many requests. Please try again later." },
-        { status: 429 }
-      )
-      response.headers.set("Access-Control-Allow-Origin", origin || "*")
-      response.headers.set("Vary", "Origin")
-      return response
+
+    if (publicRateLimit) {
+      const { success } = await publicRateLimit.limit(ip)
+
+      if (!success) {
+        const response = NextResponse.json(
+          { error: "Too many requests. Please try again later." },
+          { status: 429 }
+        )
+        response.headers.set("Access-Control-Allow-Origin", origin || "*")
+        response.headers.set("Vary", "Origin")
+        return response
+      }
     }
 
     const body = await request.json()

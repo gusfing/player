@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
-import { currentUser } from "@clerk/nextjs/server"
 import { prisma } from "@/lib/db"
+import { getActiveUser } from "@/lib/mock-auth"
 
-async function getOrCreateUser(user: { id: string; emailAddresses: Array<{ emailAddress: string }> }): Promise<{ id: string }> {
+async function getOrCreateUser(user: any): Promise<{ id: string }> {
   const userEmail = user.emailAddresses[0]?.emailAddress
   if (!userEmail) {
     throw new Error("No email found")
@@ -26,7 +26,7 @@ async function getOrCreateUser(user: { id: string; emailAddresses: Array<{ email
 
 export async function GET() {
   try {
-    const user = await currentUser()
+    const user = await getActiveUser()
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }

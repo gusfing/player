@@ -3,6 +3,12 @@ import { prisma } from "@/lib/db"
 import { isLocalhost, shouldSkipDomainValidation } from "@/utils/domainValidation"
 import { getCorsHeaders, addCorsHeaders } from "@/lib/cors"
 
+// Edge runtime for global caching - critical for Kajabi/ClickFunnels performance
+export const runtime = "edge"
+
+// Cache config at the edge for 60 seconds
+const revalidate = 60
+
 export async function OPTIONS(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -205,6 +211,8 @@ export async function GET(
       response.headers.set(key, value)
     })
     response.headers.set("Vary", "Origin")
+    // Edge caching: serve cached config to global viewers
+    response.headers.set("Cache-Control", `public, max-age=60, s-maxage=${revalidate}, stale-while-revalidate=300`)
 
     return response
   } catch (error) {

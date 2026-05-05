@@ -16,6 +16,12 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "YouTube Shell - Custom Video Player",
   description: "Create custom YouTube players with branding, analytics, and lead capture",
+  other: {
+    // oEmbed 1.0 Discovery - allows platforms like Skool/Circle to auto-embed
+    // when users paste the player URL
+    "oembed:url": `${process.env.NEXT_PUBLIC_APP_URL || "https://player.shrazen.com"}/api/oembed`,
+    "application/oembed+json": `${process.env.NEXT_PUBLIC_APP_URL || "https://player.shrazen.com"}/api/oembed`,
+  },
 }
 
 export default function RootLayout({

@@ -3,7 +3,8 @@ import { currentUser } from "@clerk/nextjs/server"
 import { prisma } from "@/lib/db"
 import Stripe from "stripe"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY
+const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null
 
 async function getOrCreateUser(user: { id: string; emailAddresses: Array<{ emailAddress: string }> }): Promise<{ id: string; stripeCustomerId: string | null }> {
   const userEmail = user.emailAddresses[0]?.emailAddress
@@ -28,6 +29,10 @@ async function getOrCreateUser(user: { id: string; emailAddresses: Array<{ email
 }
 
 export async function POST() {
+  if (!stripe) {
+    return NextResponse.json({ error: "Stripe not configured" }, { status: 503 })
+  }
+
   try {
     const user = await currentUser()
     if (!user) {

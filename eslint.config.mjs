@@ -12,7 +12,17 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated/minified files
+    "public/player.min.js",
+    "public/player.js",
   ]),
+  // Ignore specific rules for certain files
+  {
+    files: ["public/**"],
+    rules: {
+      "react/no-unescaped-entities": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

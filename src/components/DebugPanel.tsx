@@ -1,24 +1,19 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useDebugStore, DebugLog } from "@/hooks/useDebugStore"
 import { X, Copy, Trash2, Zap, ChevronDown, ChevronUp, RefreshCw } from "lucide-react"
 
 export function DebugPanel() {
   const { enabled, logs, clearLogs, toggle, ga4Id, pixelId, isDebugActive } = useDebugStore()
   const [isMinimized, setIsMinimized] = useState(false)
-  const [mounted, setMounted] = useState(false)
   const [testSent, setTestSent] = useState(false)
-  const [hasPlayer, setHasPlayer] = useState(true)
 
-  const checkForPlayer = useCallback(() => {
-    const hasYtShell = document.querySelector('.yt-shell-wrapper')
-    setHasPlayer(!!hasYtShell)
+  const hasPlayer = useMemo(() => {
+    return !!document.querySelector('.yt-shell-wrapper')
   }, [])
 
   useEffect(() => {
-    setMounted(true)
-    
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === "YT_SHELL_DEBUG") {
         useDebugStore.getState().addLog({
@@ -32,17 +27,13 @@ export function DebugPanel() {
     }
 
     window.addEventListener("message", handleMessage)
-    
-    checkForPlayer()
-    const interval = setInterval(checkForPlayer, 2000)
-    
+
     return () => {
       window.removeEventListener("message", handleMessage)
-      clearInterval(interval)
     }
-  }, [checkForPlayer])
+  }, [])
 
-  const shouldShow = mounted && isDebugActive()
+  const shouldShow = isDebugActive()
   if (!shouldShow) return null
 
   const formatTime = (timestamp: Date) => {
@@ -141,7 +132,7 @@ export function DebugPanel() {
                 )}
                 {hasPlayer && (
                   <p className="text-xs text-gray-600">
-                    Click "Test Event" to verify tracking
+                    Click &ldquo;Test Event&rdquo; to verify tracking
                   </p>
                 )}
               </div>

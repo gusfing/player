@@ -4,8 +4,17 @@
   const CONFIG_ENDPOINT = '/api/embed';
   const TRACK_ENDPOINT = '/api/track';
   const LEADS_ENDPOINT = '/api/leads';
-  
-  // Verbose logging utility
+
+  // SVG Icons
+  const ICONS = {
+    play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>',
+    mute: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>',
+    unmute: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>',
+    fsEnter: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+    fsExit: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>',
+  };
+
   const log = {
     debug: (...args) => console.log('[YT Shell]', ...args),
     info: (...args) => console.info('[YT Shell]', ...args),
@@ -20,95 +29,59 @@
       this.videoId = this.extractVideoId();
       this.config = null;
       this.isPlaying = false;
-      this.startTime = null;
+      this.isPaused = false;
+      this.isEnded = false;
+      this.hasStarted = false;
+      this.isMuted = false;
       this.watchedTime = 0;
       this.hasTrackedComplete = false;
       this.wrapper = null;
       this.player = null;
-      this.overlay = null;
-      this.ctaButton = null;
-      this.leadForm = null;
-      this.ctaShown = false;
-      this.ctaTriggered = false;
-      this.leadCaptured = false;
-      this.isPausedForForm = false;
-      this.thumbnail = null;
-      this.playButton = null;
-      this.ctaContainer = null;
-      this.modal = null;
+      this.apiStatus = 'pending';
+      this.playerInstance = null;
+      this.watchInterval = null;
+      this.idleTimer = null;
       this.gateOverlay = null;
-      this.skipProtectionEnabled = false;
-      this.skipProtectionBlockAfter = 30;
-      this.apiStatus = 'pending'; // pending, success, error
-      
+      this.leadFormShown = false;
+      this.leadCaptured = false;
+
       log.debug('Player created for video:', this.videoId, { siteId: this.siteId });
       this.init();
     }
 
-  extractVideoId() {
-    const src = this.iframe?.src || '';
-    log.debug('Extracting video ID from:', src);
-    // 1) Try embed path first: /embed/{videoId}
-    let m = src.match(/embed\/([a-zA-Z0-9_-]+)(?:[?#&]|$)/);
-    if (m && m[1]) {
-      log.debug('Extracted video ID from embed path:', m[1]);
-      return m[1];
+    extractVideoId() {
+      const src = this.iframe?.src || '';
+      let m = src.match(/embed\/([a-zA-Z0-9_-]+)(?:[?#&]|$)/);
+      if (m && m[1]) return m[1];
+      m = src.match(/[?&]v=([^&#]+)/);
+      if (m && m[1]) return m[1];
+      return null;
     }
-    // 2) Fallback to v parameter (older formats)
-    m = src.match(/[?&]v=([^&#]+)/);
-    if (m && m[1]) {
-      log.debug('Extracted video ID from v parameter:', m[1]);
-      return m[1];
-    }
-    log.warn('Video ID not found in embed URL', { src });
-    return null;
-  }
 
     async init() {
       if (!this.videoId) {
-        log.warn('No video ID found, skipping initialization');
+        log.warn('No video ID found, skipping');
         return;
       }
-      
-      log.info('Initializing player for video:', this.videoId);
-      
+
       try {
         const domainParam = `?domain=${encodeURIComponent(window.location.host)}`;
-        log.debug('Fetching config from:', `${CONFIG_ENDPOINT}/${this.siteId}${domainParam}`);
         const response = await fetch(`${CONFIG_ENDPOINT}/${this.siteId}${domainParam}`);
-        
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-        
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
         this.config = await response.json();
         this.apiStatus = 'success';
-        log.info('Config loaded successfully', { videoId: this.videoId });
-        
+
         if (this.config.error) {
-          log.error('API returned error:', this.config.error, this.config.message);
-          // Notify debug panel
-          if (window.ytShellInstance?.debugPanel) {
-            window.ytShellInstance.debugPanel.addEvent('api_error', {
-              error: this.config.error,
-              message: this.config.message
-            }, 'error', 'error');
-          }
+          log.error('API error:', this.config.error);
           return;
         }
-        
+
         this.applyConfig();
       } catch (e) {
         this.apiStatus = 'error';
         log.error('Failed to load config:', e.message);
-        
-        // Notify debug panel of API error
-        if (window.ytShellInstance?.debugPanel) {
-          window.ytShellInstance.debugPanel.addEvent('api_error', {
-            error: e.message,
-            type: 'network'
-          }, 'error', 'error');
-        }
       }
     }
 
@@ -116,18 +89,13 @@
       const key = `yt_shell_lead_${this.siteId}`;
       const data = localStorage.getItem(key);
       if (!data) return false;
-      
       try {
         const parsed = JSON.parse(data);
         if (!parsed.lastSubmittedAt) return false;
-        
-        const skipIfKnown = this.config?.ctaConfig?.rules?.skipIfKnownUser !== false;
         const reTriggerDays = this.config?.ctaConfig?.rules?.reTriggerAfterDays || 7;
         const lastSubmit = new Date(parsed.lastSubmittedAt);
         const daysSince = (Date.now() - lastSubmit.getTime()) / (1000 * 60 * 60 * 24);
-        
-        // Skip if: user is known AND within re-trigger window
-        return skipIfKnown && daysSince < reTriggerDays;
+        return daysSince < reTriggerDays;
       } catch {
         return false;
       }
@@ -136,243 +104,511 @@
     markUserAsKnown(email) {
       const key = `yt_shell_lead_${this.siteId}`;
       localStorage.setItem(key, JSON.stringify({
-        email: email,
+        email,
         lastSubmittedAt: new Date().toISOString()
       }));
     }
 
     applyConfig() {
-      log.info('Applying config for video:', this.videoId);
-      
-      // Check if iframe exists in DOM
-      if (!document.body.contains(this.iframe)) {
-        log.error('Iframe no longer exists in DOM');
-        return;
-      }
-      
+      if (!document.body.contains(this.iframe)) return;
+
       const rect = this.iframe.getBoundingClientRect();
       const width = rect.width || 640;
       const height = rect.height || 360;
-      
-      log.debug('Iframe dimensions:', { width, height });
-      
-      // Check if iframe is visible
-      if (rect.width === 0 || rect.height === 0) {
-        log.warn('Iframe has zero dimensions - might be hidden or lazy loaded');
-      }
-      
+
+      const branding = this.config?.brandingConfig || {};
       const ctaConfig = this.config?.ctaConfig || {};
-      const captureMode = ctaConfig.captureMode || 'smart_pause';
-      
-      log.debug('CTA Config:', { captureMode, enabled: ctaConfig.enabled });
-      
+      const playerConfig = this.config?.playerConfig || {};
+
+      // Colors
+      const playButtonColor = branding.playButtonColor || branding.primaryColor || '#ef4444';
+      const progressBarColor = branding.progressBarColor || branding.primaryColor || '#ef4444';
+      const brandName = branding.topBarText || this.config?.domain || 'Video';
+
+      // Create wrapper (STRICTLY SQUARE - no border radius)
       this.wrapper = document.createElement('div');
-      this.wrapper.className = 'yt-shell-wrapper';
+      this.wrapper.className = 'cysp-shell';
+      this.wrapper.tabIndex = 0;
       this.wrapper.style.cssText = `
         position: relative;
         width: ${width}px;
         height: ${height}px;
         max-width: 100%;
-        background: #000;
+        background: #050505;
+        border-radius: 0 !important;
         overflow: hidden;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        isolation: isolate;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       `;
 
-      this.thumbnail = document.createElement('div');
-      this.thumbnail.className = 'yt-shell-thumbnail';
-      this.thumbnail.style.cssText = `
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+      // Stage
+      const stage = document.createElement('div');
+      stage.className = 'cysp-stage';
+      stage.style.cssText = 'position: absolute; inset: 0; background: #000;';
+
+      // Player slot (oversized iframe trick)
+      const slot = document.createElement('div');
+      slot.className = 'cysp-player-slot';
+      slot.style.cssText = 'position: absolute; top: -50%; left: 0; width: 100%; height: 200%; z-index: 1;';
+
+      const playerTarget = document.createElement('div');
+      playerTarget.id = 'cysp-player-' + Math.random().toString(36).slice(2, 10);
+      slot.appendChild(playerTarget);
+
+      // Click layer
+      const clickLayer = document.createElement('div');
+      clickLayer.className = 'cysp-click-layer';
+      clickLayer.style.cssText = 'position: absolute; inset: 0; z-index: 2; cursor: pointer;';
+
+      // Poster with thumbnail and play button
+      const poster = document.createElement('div');
+      poster.className = 'cysp-poster';
+      poster.style.cssText = `
+        position: absolute; inset: 0; z-index: 4; background-color: #000;
         background-image: url(https://i.ytimg.com/vi/${this.videoId}/maxresdefault.jpg);
-        background-size: cover;
-        background-position: center;
-        cursor: pointer;
-        transition: transform 0.2s ease;
+        background-size: cover; background-position: center; cursor: pointer;
+        transition: opacity 0.4s ease;
       `;
 
-      this.playButton = document.createElement('div');
-      this.playButton.className = 'yt-shell-play';
-      this.playButton.style.cssText = `
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 68px;
-        height: 48px;
-        background: ${this.config?.brandingConfig?.primaryColor || '#FF0000'};
-        border-radius: 12px;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      // Central play button (oversized)
+      const centerPlay = document.createElement('div');
+      centerPlay.className = 'cysp-center-play';
+      centerPlay.style.cssText = `
+        position: absolute; top: 50%; left: 50%; width: 76px; height: 52px;
+        transform: translate(-50%, -50%); border-radius: 14px;
+        background: rgba(30, 30, 30, 0.8); border: 1px solid rgba(255, 255, 255, 0.1);
+        z-index: 2; transition: transform 0.2s ease, background 0.2s ease;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
       `;
-      this.playButton.innerHTML = `
-        <svg width="20" height="24" viewBox="0 0 20 24" fill="white" style="margin-left: 3px;">
-          <path d="M0 0L20 12L0 24V0Z"/>
-        </svg>
+      centerPlay.innerHTML = `<div style="width: 0; height: 0; border-style: solid; border-width: 12px 0 12px 20px; border-color: transparent transparent transparent white; margin-left: 4px;"></div>`;
+
+      poster.appendChild(centerPlay);
+
+      // Pause overlay
+      const pauseOverlay = document.createElement('div');
+      pauseOverlay.className = 'cysp-pause-overlay';
+      pauseOverlay.style.cssText = 'position: absolute; inset: 0; z-index: 3; opacity: 0; pointer-events: none; transition: opacity 0.3s ease;';
+      const pausePlay = centerPlay.cloneNode(true);
+      pauseOverlay.appendChild(pausePlay);
+
+      // Top bar with brand badge
+      const topBar = document.createElement('div');
+      topBar.className = 'cysp-top-bar';
+      topBar.style.cssText = 'position: absolute; top: 0; left: 0; right: 0; z-index: 5; padding: 20px 22px; pointer-events: none;';
+
+      const badge = document.createElement('span');
+      badge.className = 'cysp-badge';
+      badge.style.cssText = `
+        display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px;
+        border-radius: 999px; background: rgba(20, 20, 20, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.08); color: #fff;
+        font: 600 11px/1.1 -apple-system, BlinkMacSystemFont, sans-serif;
+        letter-spacing: 0.08em; text-transform: uppercase;
+      `;
+      badge.innerHTML = `<span style="width: 8px; height: 8px; border-radius: 50%; background: ${playButtonColor};"></span>${brandName}`;
+      topBar.appendChild(badge);
+
+      // Custom controls
+      const controls = document.createElement('div');
+      controls.className = 'cysp-controls';
+      controls.style.cssText = `
+        position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+        padding: 0 16px 12px 16px;
+        background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, transparent 100%);
+        transition: opacity 0.3s ease, transform 0.3s ease;
       `;
 
-      this.playButton.onmouseenter = () => {
-        this.playButton.style.transform = 'translate(-50%, -50%) scale(1.1)';
-        this.playButton.style.boxShadow = '0 6px 16px rgba(0,0,0,0.4)';
+      const progress = document.createElement('div');
+      progress.className = 'cysp-progress';
+      progress.style.cssText = 'width: 100%; height: 5px; background: rgba(255, 255, 255, 0.2); border-radius: 999px; overflow: hidden; cursor: pointer; margin-bottom: 12px;';
+
+      const progressFill = document.createElement('div');
+      progressFill.className = 'cysp-progress-fill';
+      progressFill.style.cssText = `width: 0%; height: 100%; background: ${progressBarColor}; border-radius: inherit; transition: width 0.25s linear;`;
+      progress.appendChild(progressFill);
+
+      const controlsRow = document.createElement('div');
+      controlsRow.className = 'cysp-row';
+      controlsRow.style.cssText = 'display: flex; align-items: center; gap: 16px;';
+
+      const playBtn = document.createElement('button');
+      playBtn.className = 'cysp-btn cysp-play-btn';
+      playBtn.type = 'button';
+      playBtn.setAttribute('aria-label', 'Play');
+      playBtn.style.cssText = 'appearance: none; border: none; cursor: pointer; color: #fff; background: transparent; padding: 4px; display: flex; align-items: center; justify-content: center; opacity: 0.85; transition: opacity 0.2s ease;';
+      playBtn.innerHTML = `<span style="width: 24px; height: 24px;">${ICONS.play}</span>`;
+
+      const timeDisplay = document.createElement('span');
+      timeDisplay.className = 'cysp-time';
+      timeDisplay.style.cssText = 'color: rgba(255, 255, 255, 0.9); font: 400 13px/1 sans-serif; font-variant-numeric: tabular-nums;';
+      timeDisplay.textContent = '0:00 / 0:00';
+
+      const spacer = document.createElement('div');
+      spacer.className = 'cysp-spacer';
+      spacer.style.cssText = 'flex-grow: 1;';
+
+      const muteBtn = document.createElement('button');
+      muteBtn.className = 'cysp-btn cysp-mute-btn';
+      muteBtn.type = 'button';
+      muteBtn.setAttribute('aria-label', 'Mute');
+      muteBtn.style.cssText = playBtn.style.cssText;
+      muteBtn.innerHTML = `<span style="width: 24px; height: 24px;">${ICONS.mute}</span>`;
+
+      const fsBtn = document.createElement('button');
+      fsBtn.className = 'cysp-btn cysp-fullscreen-btn';
+      fsBtn.type = 'button';
+      fsBtn.setAttribute('aria-label', 'Fullscreen');
+      fsBtn.style.cssText = playBtn.style.cssText;
+      fsBtn.innerHTML = `<span style="width: 24px; height: 24px;">${ICONS.fsEnter}</span>`;
+
+      controlsRow.appendChild(playBtn);
+      controlsRow.appendChild(timeDisplay);
+      controlsRow.appendChild(spacer);
+      controlsRow.appendChild(muteBtn);
+      controlsRow.appendChild(fsBtn);
+      controls.appendChild(progress);
+      controls.appendChild(controlsRow);
+
+      // Assemble wrapper
+      this.wrapper.appendChild(stage);
+      this.wrapper.appendChild(slot);
+      this.wrapper.appendChild(clickLayer);
+      this.wrapper.appendChild(poster);
+      this.wrapper.appendChild(pauseOverlay);
+      this.wrapper.appendChild(topBar);
+      this.wrapper.appendChild(controls);
+
+      // Hover effects for center play button
+      centerPlay.onmouseenter = () => {
+        centerPlay.style.transform = 'translate(-50%, -50%) scale(1.05)';
+        centerPlay.style.background = playButtonColor;
       };
-      this.playButton.onmouseleave = () => {
-        this.playButton.style.transform = 'translate(-50%, -50%) scale(1)';
-        this.playButton.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+      centerPlay.onmouseleave = () => {
+        centerPlay.style.transform = 'translate(-50%, -50%) scale(1)';
+        centerPlay.style.background = 'rgba(30, 30, 30, 0.8)';
       };
 
-      this.ctaContainer = document.createElement('div');
-      this.ctaContainer.className = 'yt-shell-cta';
-      this.ctaContainer.style.cssText = `
-        position: absolute;
-        bottom: 16px;
-        left: 16px;
-        right: 16px;
-        display: flex;
-        gap: 8px;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-      `;
-
-      if (ctaConfig.enabled) {
-        this.createCTAButtons(this.ctaContainer);
-      }
-
-      this.thumbnail.appendChild(this.playButton);
-      this.wrapper.appendChild(this.thumbnail);
-      this.wrapper.appendChild(this.ctaContainer);
-
-      const handlePlay = (e) => {
-        e.stopPropagation();
-        
-        if (this.isKnownUser()) {
-          // User has submitted recently, skip gate
-          this.startPlayback();
-        } else if (captureMode === 'instant_unlock') {
-          this.showGateOverlay();
+      // Event handlers
+      const togglePlay = () => {
+        if (this.isPlaying && !this.isPaused) {
+          this.playerInstance?.pauseVideo();
         } else {
-          this.startPlayback();
+          this.checkAndStartPlayback();
         }
       };
 
-      this.thumbnail.onclick = handlePlay;
-      this.playButton.onclick = handlePlay;
+      const toggleMute = () => {
+        this.isMuted = !this.isMuted;
+        if (this.isMuted) {
+          this.playerInstance?.mute();
+        } else {
+          this.playerInstance?.unMute();
+        }
+        muteBtn.innerHTML = `<span style="width: 24px; height: 24px;">${this.isMuted ? ICONS.unmute : ICONS.mute}</span>`;
+      };
 
+      const toggleFs = () => {
+        if (document.fullscreenElement === this.wrapper) {
+          document.exitFullscreen?.();
+        } else {
+          this.wrapper.requestFullscreen?.();
+        }
+      };
+
+      const seekTo = (e) => {
+        if (!this.playerInstance) return;
+        const rect = progress.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const duration = this.playerInstance.getDuration() || 0;
+        this.playerInstance.seekTo(duration * ratio, true);
+      };
+
+      const seekRelative = (seconds) => {
+        if (!this.playerInstance) return;
+        const current = this.playerInstance.getCurrentTime() || 0;
+        const duration = this.playerInstance.getDuration() || 0;
+        let newTime = Math.max(0, Math.min(duration, current + seconds));
+        this.playerInstance.seekTo(newTime, true);
+      };
+
+      // Click handlers
+      poster.onclick = togglePlay;
+      pauseOverlay.onclick = togglePlay;
+      clickLayer.onclick = togglePlay;
+      playBtn.onclick = (e) => { e.stopPropagation(); togglePlay(); };
+      muteBtn.onclick = (e) => { e.stopPropagation(); toggleMute(); };
+      fsBtn.onclick = (e) => { e.stopPropagation(); toggleFs(); };
+      progress.onclick = (e) => { e.stopPropagation(); seekTo(e); };
+
+      // Keyboard shortcuts
+      this.wrapper.addEventListener('keydown', (e) => {
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+        switch(e.key) {
+          case ' ':
+          case 'k':
+          case 'K':
+            e.preventDefault();
+            togglePlay();
+            break;
+          case 'm':
+          case 'M':
+            e.preventDefault();
+            toggleMute();
+            break;
+          case 'f':
+          case 'F':
+            e.preventDefault();
+            toggleFs();
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            seekRelative(5);
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            seekRelative(-5);
+            break;
+        }
+      });
+
+      // Fullscreen change handler
+      document.addEventListener('fullscreenchange', () => {
+        const isFs = document.fullscreenElement === this.wrapper;
+        fsBtn.innerHTML = `<span style="width: 24px; height: 24px;">${isFs ? ICONS.fsExit : ICONS.fsEnter}</span>`;
+      });
+
+      // Hide controls when playing and idle
+      const resetIdle = () => {
+        clearTimeout(this.idleTimer);
+        this.wrapper.classList.remove('is-idle');
+        if (this.isPlaying && !this.isPaused) {
+          this.idleTimer = setTimeout(() => {
+            this.wrapper.classList.add('is-idle');
+          }, 3000);
+        }
+      };
+
+      this.wrapper.addEventListener('mousemove', resetIdle);
+      this.wrapper.addEventListener('touchstart', () => resetIdle(), { passive: true });
+
+      // Store references
+      this.elements = {
+        wrapper: this.wrapper,
+        poster,
+        pauseOverlay,
+        clickLayer,
+        controls,
+        progressFill,
+        timeDisplay,
+        playBtn,
+        muteBtn,
+        fsBtn,
+        centerPlay,
+        progress,
+      };
+
+      // Click on wrapper for focus
+      this.wrapper.addEventListener('click', () => {
+        resetIdle();
+        if (document.activeElement !== this.wrapper) {
+          this.wrapper.focus();
+        }
+      });
+
+      // Replace iframe
       this.iframe.parentNode.replaceChild(this.wrapper, this.iframe);
+
+      // Load YouTube IFrame API and mount player
+      this.loadYouTubeAPI(playerTarget, playButtonColor, progressBarColor, ctaConfig, centerPlay, pausePlay);
+    }
+
+    loadYouTubeAPI(playerTarget, playButtonColor, progressBarColor, ctaConfig, centerPlay, pausePlay) {
+      if (window.YT && window.YT.Player) {
+        this.mountPlayer(playerTarget, playButtonColor, progressBarColor, ctaConfig, centerPlay, pausePlay);
+        return;
+      }
+
+      if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+        const script = document.createElement('script');
+        script.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(script);
+      }
+
+      window.onYouTubeIframeAPIReady = () => {
+        this.mountPlayer(playerTarget, playButtonColor, progressBarColor, ctaConfig, centerPlay, pausePlay);
+      };
+    }
+
+    mountPlayer(playerTarget, playButtonColor, progressBarColor, ctaConfig, centerPlay, pausePlay) {
+      this.playerInstance = new YT.Player(playerTarget.id, {
+        host: 'https://www.youtube-nocookie.com',
+        videoId: this.videoId,
+        playerVars: {
+          controls: 0,
+          rel: 0,
+          modestbranding: 1,
+          playsinline: 1,
+          enablejsapi: 1,
+          iv_load_policy: 3,
+          cc_load_policy: 0,
+          fs: 0
+        },
+        events: {
+          onReady: (e) => {
+            this.isMuted = e.target.isMuted?.() || false;
+          },
+          onStateChange: (e) => {
+            this.isPlaying = e.data === YT.PlayerState.PLAYING;
+            this.isPaused = e.data === YT.PlayerState.PAUSED;
+            this.isEnded = e.data === YT.PlayerState.ENDED;
+
+            if ([YT.PlayerState.PLAYING, YT.PlayerState.PAUSED, YT.PlayerState.BUFFERING].includes(e.data)) {
+              this.hasStarted = true;
+              this.elements.poster.classList.add('has-started');
+            }
+
+            this.elements.wrapper.classList.toggle('is-playing', this.isPlaying);
+            this.elements.wrapper.classList.toggle('is-paused', this.isPaused);
+            this.elements.wrapper.classList.toggle('is-ended', this.isEnded);
+            this.elements.wrapper.classList.toggle('has-started', this.hasStarted);
+
+            // Pause overlay visibility
+            this.elements.pauseOverlay.style.pointerEvents = (this.isPaused || this.isEnded) ? 'auto' : 'none';
+            this.elements.pauseOverlay.style.opacity = (this.isPaused || this.isEnded) ? '1' : '0';
+
+            // Update play button icon
+            this.elements.playBtn.innerHTML = `<span style="width: 24px; height: 24px;">${this.isPlaying ? ICONS.pause : ICONS.play}</span>`;
+
+            // Start/stop watch timer
+            if (this.isPlaying) {
+              this.startWatchTimer();
+            } else {
+              clearInterval(this.watchInterval);
+              this.elements.wrapper.classList.remove('is-idle');
+              clearTimeout(this.idleTimer);
+            }
+
+            // Track events
+            if (this.isPlaying) {
+              this.track('video_played');
+            }
+            if (this.isEnded) {
+              this.track('video_completed');
+            }
+          }
+        }
+      });
+
+      // Update UI periodically
+      this.watchInterval = setInterval(() => {
+        if (this.playerInstance && typeof this.playerInstance.getCurrentTime === 'function') {
+          const current = this.playerInstance.getCurrentTime() || 0;
+          const duration = this.playerInstance.getDuration() || 0;
+
+          // Update progress bar
+          const progress = duration ? (current / duration) * 100 : 0;
+          this.elements.progressFill.style.width = `${progress}%`;
+
+          // Update time display
+          this.elements.timeDisplay.textContent = `${this.formatTime(current)} / ${this.formatTime(duration)}`;
+
+          // Track progress milestones
+          this.trackProgressMilestones(current, duration);
+        }
+      }, 250);
+    }
+
+    formatTime(seconds) {
+      if (!seconds || isNaN(seconds)) return '0:00';
+      const total = Math.floor(seconds);
+      return Math.floor(total / 60) + ':' + String(total % 60).padStart(2, '0');
+    }
+
+    trackProgressMilestones(current, duration) {
+      const pct = duration ? (current / duration) * 100 : 0;
+
+      if (pct >= 25 && !this.pct25) {
+        this.pct25 = true;
+        this.track('video_progress', { progress: 25 });
+      }
+      if (pct >= 50 && !this.pct50) {
+        this.pct50 = true;
+        this.track('video_progress', { progress: 50 });
+      }
+      if (pct >= 75 && !this.pct75) {
+        this.pct75 = true;
+        this.track('video_progress', { progress: 75 });
+      }
+    }
+
+    checkAndStartPlayback() {
+      const ctaConfig = this.config?.ctaConfig || {};
+      const captureMode = ctaConfig.captureMode || 'smart_pause';
+
+      if (this.isKnownUser()) {
+        this.startPlayback();
+      } else if (captureMode === 'instant_unlock') {
+        this.showGateOverlay();
+      } else {
+        this.startPlayback();
+      }
+    }
+
+    startPlayback() {
+      if (this.playerInstance) {
+        this.playerInstance.playVideo();
+      }
     }
 
     showGateOverlay() {
       const ctaConfig = this.config?.ctaConfig || {};
       const form = ctaConfig.form || {};
-      const buttonColor = ctaConfig.buttonColor || this.config?.brandingConfig?.primaryColor || '#2563eb';
-      
-      this.gateOverlay = document.createElement('div');
-      this.gateOverlay.className = 'yt-shell-gate';
-      this.gateOverlay.style.cssText = `
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(135deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.85) 100%);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        padding: 32px;
-        box-sizing: border-box;
-      `;
+      const buttonColor = ctaConfig.buttonColor || this.config?.brandingConfig?.primaryColor || '#ef4444';
 
-      // Calculate social proof count
-      const socialProof = ctaConfig.socialProof || {};
-      let socialProofHtml = '';
-      if (socialProof.enabled) {
-        const baseCount = socialProof.baseCount || 0;
-        const incrementPerDay = socialProof.incrementPerDay || 0;
-        const installDate = new Date(this.config?.createdAt || Date.now());
-        const daysSinceInstall = Math.floor((Date.now() - installDate.getTime()) / (1000 * 60 * 60 * 24));
-        const currentCount = baseCount + (daysSinceInstall * incrementPerDay);
-        const displayText = (socialProof.text || 'Join {count} others').replace('{count}', currentCount.toLocaleString());
-        socialProofHtml = `<p style="color: rgba(255,255,255,0.6); font-size: 13px; margin: 0 0 20px 0;">${displayText}</p>`;
-      }
+      this.gateOverlay = document.createElement('div');
+      this.gateOverlay.style.cssText = `
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.95); display: flex; flex-direction: column;
+        align-items: center; justify-content: center; z-index: 100; padding: 32px;
+      `;
 
       this.gateOverlay.innerHTML = `
         <div style="text-align: center; max-width: 400px; width: 100%;">
           <div style="font-size: 48px; margin-bottom: 16px;">🔒</div>
-          ${socialProofHtml}
-          <h3 style="color: white; margin: 0 0 8px 0; font-size: 24px;">${form.headline || 'Get Started'}</h3>
-          <p style="color: rgba(255,255,255,0.7); margin: 0 0 24px 0; font-size: 14px;">${form.description || 'Enter your details to continue watching'}</p>
-          <form id="yt-shell-gate-form" style="text-align: left;">
-            ${(form.fields || ['email']).map(field => `
-              <div style="margin-bottom: 12px;">
-                <input type="${field === 'email' ? 'email' : field === 'phone' ? 'tel' : 'text'}" 
-                       name="${field}" 
-                       placeholder="${field.charAt(0).toUpperCase() + field.slice(1)}" 
-                       ${field === 'email' ? 'required' : ''}
-                       style="width: 100%; padding: 14px 16px; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 14px; background: rgba(255,255,255,0.1); color: white; box-sizing: border-box;">
-              </div>
-            `).join('')}
-            <button type="submit" style="
-              width: 100%;
-              padding: 14px;
-              background: ${buttonColor};
-              color: white;
-              border: none;
-              border-radius: 8px;
-              font-size: 16px;
-              font-weight: 600;
-              cursor: pointer;
-              margin-top: 8px;
-            ">${form.ctaText || 'Unlock Video'}</button>
+          <h3 style="color: white; margin: 0 0 8px 0; font-size: 24px;">${form.headline || 'Unlock this content'}</h3>
+          <p style="color: rgba(255,255,255,0.7); margin: 0 0 24px 0; font-size: 14px;">${form.description || 'Enter your email to continue watching'}</p>
+          <form id="yt-shell-gate-form">
+            <input type="email" name="email" placeholder="Email address" required
+              style="width: 100%; padding: 14px 16px; border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; font-size: 14px; background: rgba(255,255,255,0.1); color: white; margin-bottom: 12px; box-sizing: border-box;">
+            <button type="submit" style="width: 100%; padding: 14px; background: ${buttonColor}; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer;">
+              ${form.buttonText || 'Continue'}
+            </button>
+            ${ctaConfig.mode === 'soft' ? '<button type="button" onclick="this.closest(\\'div\\').closest(\\'div\\').remove()" style="margin-top: 12px; background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 13px;">Skip for now</button>' : ''}
           </form>
-          <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin-top: 16px;">Your data is secure and will only be used to contact you.</p>
         </div>
       `;
 
       this.wrapper.appendChild(this.gateOverlay);
 
-      const formEl = this.gateOverlay.querySelector('#yt-shell-gate-form');
-      formEl.onsubmit = async (e) => {
+      this.gateOverlay.querySelector('#yt-shell-gate-form').onsubmit = async (e) => {
         e.preventDefault();
         const formData = new FormData(e.target);
-        
-        const data = {
-          installationId: this.siteId,
-          videoId: this.videoId,
-          email: formData.get('email'),
-          name: formData.get('name') || null,
-          phone: formData.get('phone') || null,
-          url: window.location.href,
-          domain: window.location.host,
-        };
+        const email = formData.get('email');
 
         try {
-          const response = await fetch(LEADS_ENDPOINT, {
+          await fetch(LEADS_ENDPOINT, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
+            body: JSON.stringify({
+              installationId: this.siteId,
+              videoId: this.videoId,
+              email,
+              url: window.location.href,
+            }),
           });
-          
-          const result = await response.json();
-          
-          this.markUserAsKnown(data.email);
-          
-          if (this.gateOverlay) {
-            this.gateOverlay.style.opacity = '0';
-            this.gateOverlay.style.transition = 'opacity 0.3s ease';
-            setTimeout(() => {
-              if (this.gateOverlay && this.gateOverlay.parentNode) {
-                this.gateOverlay.parentNode.removeChild(this.gateOverlay);
-              }
-            }, 300);
-          }
-          
+
+          this.markUserAsKnown(email);
+          this.gateOverlay.remove();
           this.startPlayback();
         } catch (err) {
           alert('Something went wrong. Please try again.');
@@ -380,362 +616,17 @@
       };
     }
 
-    createCTAButtons(container) {
-      const cta = this.config.ctaConfig || {};
-      const form = cta.form || {};
-      const buttonColor = cta.buttonColor || this.config?.brandingConfig?.primaryColor || '#2563eb';
-      
-      const ctaBtn = document.createElement('button');
-      ctaBtn.className = 'yt-shell-cta-primary';
-      ctaBtn.style.cssText = `
-        padding: 12px 24px;
-        background: ${buttonColor};
-        color: white;
-        border: none;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        text-decoration: none;
-        display: inline-block;
-        transition: opacity 0.2s ease, transform 0.2s ease;
-      `;
-      ctaBtn.textContent = form.ctaText || 'Get Access';
-      ctaBtn.onclick = (e) => {
-        e.stopPropagation();
-        this.trackCTA('lead_capture');
-        if (this.isPlaying) {
-          this.pauseForLeadForm();
-        } else {
-          this.showLeadForm();
-        }
-      };
-      container.appendChild(ctaBtn);
-      this.ctaButton = ctaBtn;
-
-      this.thumbnail.onmouseenter = () => {
-        container.style.opacity = '1';
-      };
-      this.thumbnail.onmouseleave = () => {
-        container.style.opacity = '0';
-      };
-    }
-
-    showLeadForm() {
-      const modal = document.createElement('div');
-      modal.className = 'yt-shell-modal';
-      modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(0,0,0,0.7);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 999999;
-        backdrop-filter: blur(4px);
-      `;
-
-      const form = document.createElement('div');
-      form.style.cssText = `
-        background: white;
-        border-radius: 16px;
-        padding: 32px;
-        max-width: 400px;
-        width: 90%;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      `;
-      const formConfig = this.config?.ctaConfig?.form || {};
-      const buttonColor = this.config?.ctaConfig?.buttonColor || this.config?.brandingConfig?.primaryColor || '#2563eb';
-      const fields = formConfig.fields || ['email'];
-      
-      let fieldsHtml = '';
-      if (fields.includes('name')) {
-        fieldsHtml += `
-          <div style="margin-bottom: 16px;">
-            <input type="text" name="name" placeholder="Full name"
-              style="width: 100%; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; box-sizing: border-box;">
-          </div>
-        `;
-      }
-      if (fields.includes('email')) {
-        fieldsHtml += `
-          <div style="margin-bottom: 16px;">
-            <input type="email" name="email" placeholder="Email address" required
-              style="width: 100%; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; box-sizing: border-box;">
-          </div>
-        `;
-      }
-      if (fields.includes('phone')) {
-        fieldsHtml += `
-          <div style="margin-bottom: 16px;">
-            <input type="tel" name="phone" placeholder="Phone number"
-              style="width: 100%; padding: 12px 16px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; box-sizing: border-box;">
-          </div>
-        `;
-      }
-
-      form.innerHTML = `
-        <h3 style="margin: 0 0 8px 0; color: #1a1a1a; font-size: 20px;">${formConfig.headline || 'Get Started'}</h3>
-        <p style="margin: 0 0 24px 0; color: #666; font-size: 14px;">${formConfig.description || 'Enter your details to continue'}</p>
-        <form id="yt-shell-lead-form">
-          ${fieldsHtml}
-          <button type="submit" style="
-            width: 100%;
-            padding: 14px;
-            background: ${buttonColor};
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-          ">${formConfig.buttonText || 'Submit'}</button>
-        </form>
-        <button class="yt-shell-close" style="
-          position: absolute;
-          top: 12px;
-          right: 12px;
-          background: none;
-          border: none;
-          font-size: 24px;
-          cursor: pointer;
-          color: #999;
-          padding: 8px;
-          line-height: 1;
-        ">×</button>
-      `;
-
-      modal.appendChild(form);
-      document.body.appendChild(modal);
-      this.modal = modal;
-
-      modal.onclick = (e) => {
-        if (e.target === modal) {
-          document.body.removeChild(modal);
-          if (this.isPausedForForm) {
-            this.resumeFromLeadForm();
-          }
-        }
-      };
-
-      form.querySelector('.yt-shell-close').onclick = () => {
-        document.body.removeChild(modal);
-        if (this.isPausedForForm) {
-          this.resumeFromLeadForm();
-        }
-      };
-
-      form.querySelector('#yt-shell-lead-form').onsubmit = async (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const data = {
-          installationId: this.siteId,
-          videoId: this.videoId,
-          email: formData.get('email'),
-          name: formData.get('name') || null,
-          phone: formData.get('phone') || null,
-          url: window.location.href,
-          domain: window.location.host,
-        };
-
-        try {
-          await fetch(LEADS_ENDPOINT, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data),
-          });
-          
-          this.markUserAsKnown(data.email);
-          this.leadCaptured = true;
-          
-          form.innerHTML = `
-            <div style="text-align: center; padding: 20px 0;">
-              <div style="font-size: 48px; margin-bottom: 16px;">✓</div>
-              <h3 style="margin: 0 0 8px 0; color: #1a1a1a;">${formConfig.thankYouMessage || 'Thanks! Enjoy the video.'}</h3>
-            </div>
-          `;
-          
-          setTimeout(() => {
-            if (modal.parentNode) {
-              document.body.removeChild(modal);
-            }
-            if (this.isPausedForForm) {
-              this.resumeFromLeadForm();
-            } else if (this.config?.ctaConfig?.onSubmit?.action === 'redirect' && this.config?.ctaConfig?.onSubmit?.redirectUrl) {
-              window.location.href = this.config.ctaConfig.onSubmit.redirectUrl;
-            }
-          }, 2000);
-        } catch (err) {
-          alert('Something went wrong. Please try again.');
-        }
-      };
-    }
-
-    pauseForLeadForm() {
-      this.isPausedForForm = true;
-      if (this.player && this.player.src) {
-        const currentSrc = this.player.src;
-        this.player.src = currentSrc.replace('autoplay=1', 'autoplay=0');
-      }
-      this.showLeadForm();
-    }
-
-    resumeFromLeadForm() {
-      this.isPausedForForm = false;
-      if (this.player && this.player.src) {
-        const currentSrc = this.player.src;
-        this.player.src = currentSrc.replace('autoplay=0', 'autoplay=1');
-      }
-    }
-
-    startPlayback() {
-      if (this.thumbnail) this.thumbnail.style.cursor = 'default';
-      if (this.playButton) this.playButton.style.display = 'none';
-
-      this.player = document.createElement('iframe');
-      this.player.style.cssText = 'position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none;';
-      this.player.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
-      
-      // Handle auto-play muted setting
-      const autoPlayMuted = this.config?.ctaConfig?.autoPlayMuted || false;
-      const muteParam = autoPlayMuted ? '&mute=1' : '';
-      this.player.src = `https://www.youtube.com/embed/${this.videoId}?autoplay=1${muteParam}&rel=0`;
-
-      this.wrapper.appendChild(this.player);
-      this.wrapper.appendChild(this.ctaContainer);
-
-      this.isPlaying = true;
-      this.startTime = Date.now();
-      this.track('video_played', {
-        content_name: `YouTube Video: ${this.videoId}`,
-        content_category: 'Video',
-      });
-
-      this.startWatchTimer();
-      this.initSkipProtection();
-    }
-
-    startWatchTimer() {
-      this.watchInterval = setInterval(() => {
-        if (this.isPlaying) {
-          this.watchedTime += 1;
-          
-          const totalSeconds = this.watchedTime;
-          
-          if (totalSeconds === 25 && !this.tracked25) {
-            this.tracked25 = true;
-            this.track('video_progress', { progress: 25 });
-          }
-          if (totalSeconds === 50 && !this.tracked50) {
-            this.tracked50 = true;
-            this.track('video_progress', { progress: 50 });
-          }
-          if (totalSeconds === 75 && !this.tracked75) {
-            this.tracked75 = true;
-            this.track('video_progress', { progress: 75 });
-          }
-          if (totalSeconds >= 100 && !this.hasTrackedComplete) {
-            this.hasTrackedComplete = true;
-            this.track('video_completed', { watch_time: this.watchedTime });
-          }
-
-          this.checkCTATrigger(totalSeconds);
-          this.checkSkipProtection(totalSeconds);
-        }
-      }, 1000);
-    }
-
-    initSkipProtection() {
-      const cta = this.config?.ctaConfig;
-      const skipProtection = cta?.skipProtection;
-      
-      if (!skipProtection?.enabled) return;
-      
-      this.skipProtectionBlockAfter = skipProtection.blockAfterSeconds || 30;
-      this.skipProtectionEnabled = true;
-    }
-
-    checkSkipProtection(currentSeconds) {
-      if (!this.skipProtectionEnabled || !this.player) return;
-      
-      const blockAfter = this.skipProtectionBlockAfter || 30;
-      
-      // Try to seek back if user is past the block point
-      if (currentSeconds > blockAfter) {
-        this.seekToBlockPoint();
-      }
-    }
-
-    seekToBlockPoint() {
-      if (!this.player || !this.player.contentWindow) return;
-      
-      const blockAfter = this.skipProtectionBlockAfter || 30;
-      
-      // Use postMessage to control the YouTube player
-      try {
-        this.player.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func: 'seekTo', args: [blockAfter, true] }),
-          'https://www.youtube.com'
-        );
-      } catch (e) {
-        // Fallback: reload iframe without autoplay
-        const currentSrc = this.player.src;
-        if (!currentSrc.includes('autoplay=0')) {
-          this.player.src = currentSrc.replace('autoplay=1', 'autoplay=0');
-          setTimeout(() => {
-            this.player.src = currentSrc.replace('autoplay=0', 'autoplay=1');
-          }, 100);
-        }
-      }
-    }
-
-    checkCTATrigger(watchedSeconds) {
-      const cta = this.config?.ctaConfig;
-      if (!cta?.enabled || this.ctaTriggered) return;
-
-      const trigger = cta?.trigger || {};
-      const triggerType = trigger.type || 'time';
-      const triggerValue = trigger.value || 30;
-
-      let shouldShow = false;
-
-      if (triggerType === 'time') {
-        shouldShow = watchedSeconds >= triggerValue;
-      } else if (triggerType === 'percentage') {
-        const estimatedDuration = this.config?.estimatedDuration || 300;
-        const percentage = (watchedSeconds / estimatedDuration) * 100;
-        shouldShow = percentage >= triggerValue;
-      }
-
-      if (shouldShow) {
-        this.ctaTriggered = true;
-        this.track('gate_shown');
-        if (this.ctaContainer) {
-          this.ctaContainer.style.opacity = '1';
-        }
-      }
-    }
-
-    trackEvent(event, data = {}) {
+    track(event, data = {}) {
       const payload = {
         installationId: this.siteId,
         videoId: this.videoId,
         event,
         url: window.location.href,
-        referrer: document.referrer,
-        domain: window.location.host,
-        timestamp: new Date().toISOString(),
         ...data,
       };
 
       if (navigator.sendBeacon) {
-        navigator.sendBeacon(
-          TRACK_ENDPOINT,
-          JSON.stringify(payload)
-        );
+        navigator.sendBeacon(TRACK_ENDPOINT, JSON.stringify(payload));
       } else {
         fetch(TRACK_ENDPOINT, {
           method: 'POST',
@@ -744,118 +635,29 @@
           keepalive: true,
         });
       }
-    }
 
-    trackCTA(type) {
-      this.track('cta_clicked', { cta_type: type });
-    }
-
-    track(event, data = {}) {
-      const ga4Status = this.sendToGA4(event, data);
-      const pixelStatus = this.sendToPixel(event, data);
-      
-      // Log to debug panel if enabled
-      if (window.ytShellInstance?.debugPanel) {
-        window.ytShellInstance.debugPanel.addEvent(event, data, ga4Status, pixelStatus);
-      }
-      
-      if (this.config?.debugEnabled) {
-        this.logDebug(event, data, ga4Status, pixelStatus);
-      }
-    }
-
-    sendToGA4(event, data = {}) {
+      // Send to GA4 if available
       const ga4Id = this.config?.resolvedGA4Id;
-      
-      if (!ga4Id) {
-        return 'not_configured';
+      if (ga4Id && typeof gtag === 'function') {
+        gtag('event', event, data);
       }
 
-      try {
-        if (typeof gtag === 'function') {
-          gtag('event', event, {
-            ...data,
-            debug: true,
-          });
-          return 'sent';
-        }
-        return 'pending';
-      } catch (e) {
-        console.error('GA4 tracking error:', e);
-        return 'failed';
-      }
-    }
-
-    sendToPixel(event, data = {}) {
+      // Send to Meta Pixel if available
       const pixelId = this.config?.resolvedPixelId;
-      
-      if (!pixelId) {
-        return 'not_configured';
+      if (pixelId && typeof fbq === 'function') {
+        const eventMap = {
+          'video_played': 'ViewContent',
+          'video_completed': 'CompleteRegistration',
+        };
+        const mappedEvent = eventMap[event] || event;
+        fbq('trackCustom', event, data);
       }
-
-      try {
-        if (typeof fbq === 'function') {
-          // Map internal events to Meta Pixel events
-          const pixelEventMap = {
-            'lead_submit': 'Lead',
-            'video_played': 'ViewContent',
-            'video_completed': 'CompleteRegistration',
-            'debug_test': 'DebugTest',
-          };
-          
-          const mappedEvent = pixelEventMap[event] || event;
-          
-          // Use trackCustom for non-standard events
-          if (pixelEventMap[event]) {
-            fbq('track', mappedEvent, { ...data, debug: true });
-          } else {
-            fbq('trackCustom', this.toCamelCase(event), { ...data, debug: true });
-          }
-          return 'sent';
-        }
-        return 'pending';
-      } catch (e) {
-        console.error('Meta Pixel tracking error:', e);
-        return 'failed';
-      }
-    }
-
-    toCamelCase(str) {
-      return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-    }
-
-    logDebug(event, data, ga4Status, pixelStatus) {
-      const debugLog = {
-        event,
-        data,
-        ga4Status,
-        pixelStatus,
-        timestamp: Date.now(),
-      };
-
-      // Send to parent window (for dashboard) or store locally
-      if (window.parent !== window) {
-        window.parent.postMessage({
-          type: 'YT_SHELL_DEBUG',
-          payload: debugLog,
-        }, '*');
-      }
-
-      // Also log to console for devs
-      console.log('[YT Shell Debug]', debugLog);
-    }
-
-    // Legacy function for backwards compatibility
-    fireMetaPixel(event, data = {}) {
-      this.track(event, data);
     }
 
     destroy() {
-      if (this.watchInterval) {
-        clearInterval(this.watchInterval);
-      }
+      clearInterval(this.watchInterval);
+      clearTimeout(this.idleTimer);
       if (this.isPlaying) {
-        this.trackEvent('video_session_ended', { watch_time: this.watchedTime });
         this.track('video_session_ended', { watch_time: this.watchedTime });
       }
     }
@@ -866,910 +668,104 @@
       this.players = [];
       this.siteId = null;
       this.initialized = false;
-      this.debugPanel = null;
-      this.mutationObserver = null;
       this.init();
     }
 
     async init() {
       log.info('YouTube Shell initializing...');
-      
+
       let script = document.currentScript;
       if (!script) {
-        log.warn('No currentScript found - searching for player script...');
-        // Try to find the script by our identifier (async/deferred scripts don't set currentScript)
         const scripts = document.querySelectorAll('script[src*="player"]');
-        if (scripts.length > 0) {
-          script = scripts[0];
-          log.debug('Found player script:', script.src);
-        }
+        if (scripts.length > 0) script = scripts[0];
       }
 
-      this.siteId = script?.getAttribute('data-site-id');
+      this.siteId = script?.getAttribute('data-site-id') || window.YT_SHELL_SITE_ID;
+
       if (!this.siteId) {
-        // Plan B: last-resort fallback from global window variable
-        if (typeof window !== 'undefined' && window.YT_SHELL_SITE_ID) {
-          this.siteId = window.YT_SHELL_SITE_ID;
-          log.info('Plan B: using window.YT_SHELL_SITE_ID for siteId', { siteId: this.siteId });
-        } else {
-          log.error('Missing data-site-id attribute on script tag');
-          return;
-        }
-      }
-
-      log.info('YouTube Shell initialized', { siteId: this.siteId, url: window.location.href });
-
-      // Check if debug mode is enabled
-      const debugEnabled = this.isDebugMode();
-      
-      if (debugEnabled) {
-        log.info('Debug mode enabled');
-        this.debugPanel = new YTDebugPanel(this.siteId, this);
-        this.debugPanel.init();
-      }
-
-      // Find and process existing iframes
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-          this.findAndReplace();
-          this.setupMutationObserver();
-        });
-      } else {
-        this.findAndReplace();
-        this.setupMutationObserver();
-      }
-
-      window.addEventListener('beforeunload', () => {
-        log.debug('Page unloading, destroying players');
-        this.players.forEach(p => p.destroy());
-      });
-
-      // Setup lazy loading for iframes that appear later
-      if ('IntersectionObserver' in window) {
-        this.setupLazyLoading();
-      }
-
-      // Listen for test events from dashboard
-      window.addEventListener('message', (event) => {
-        if (event.data?.type === 'YT_SHELL_DEBUG_TEST') {
-          log.debug('Received test event request');
-          this.fireTestEvent();
-        }
-      });
-      
-      // Also listen on document for jQuery-loaded iframes
-      this.setupDynamicIframeDetection();
-    }
-
-    isDebugMode() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const hasDebugParam = urlParams.get('debug') === 'true';
-      const hasLocalStorage = localStorage.getItem(`yt_debug_${this.siteId}`) === 'true';
-      return hasDebugParam || hasLocalStorage;
-    }
-
-    fireTestEvent() {
-      if (!this.players.length) {
-        if (this.debugPanel) {
-          this.debugPanel.addEvent('test_event', { 
-            error: 'No player on page',
-            url: window.location.href 
-          }, 'skipped', 'skipped');
-        }
+        log.error('Missing data-site-id attribute');
         return;
       }
 
-      const player = this.players[0];
-      player.track('debug_test', {
-        source: 'debug_panel',
-        url: window.location.href,
-        timestamp: Date.now(),
+      log.info('Initialized', { siteId: this.siteId });
+
+      // Setup YouTube IFrame API if not already loaded
+      if (!window.YT) {
+        window.onYouTubeIframeAPIReady = () => this.findAndProcess();
+        if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
+          const script = document.createElement('script');
+          script.src = 'https://www.youtube.com/iframe_api';
+          document.head.appendChild(script);
+        }
+      } else {
+        this.findAndProcess();
+      }
+
+      // Handle dynamic content
+      this.setupMutationObserver();
+
+      window.addEventListener('beforeunload', () => {
+        this.players.forEach(p => p.destroy());
       });
-
-      if (this.debugPanel) {
-        this.debugPanel.showTestSent();
-      }
     }
 
-    onTrack(event, data, ga4Status, pixelStatus) {
-      if (this.debugPanel) {
-        this.debugPanel.addEvent(event, data, ga4Status, pixelStatus);
-      }
-    }
-
-    findAndReplace() {
+    findAndProcess() {
       log.debug('Searching for YouTube iframes...');
       const iframes = document.querySelectorAll('iframe[src*="youtube.com"], iframe[src*="youtu.be"]');
-      log.debug('Found', iframes.length, 'iframes with YouTube URLs');
-      
-      let processed = 0;
+      log.debug('Found', iframes.length, 'iframes');
+
       iframes.forEach(iframe => {
-        // Check if already processed with a valid wrapper
+        if (iframe.classList.contains('yt-shell-processed')) return;
+
         const parent = iframe.parentElement;
-        const alreadyFixed = parent?.classList?.contains('yt-shell-wrapper');
-        
-        if (alreadyFixed) {
-          log.debug('Skipping already fixed iframe (wrapper exists)');
-          return;
-        }
-        
-        // Check if it's an embed iframe
+        if (parent?.classList.contains('cysp-shell')) return;
+
         if (iframe.src.includes('youtube.com/embed/') && !iframe.src.includes('autoplay=')) {
-          log.info('Processing YouTube iframe:', iframe.src);
+          log.info('Processing iframe:', iframe.src);
           iframe.classList.add('yt-shell-processed');
           const player = new YouTubeShellPlayer(iframe, this.siteId);
           this.players.push(player);
-          processed++;
-        } else {
-          log.debug('Skipping iframe (not an embed or has autoplay):', iframe.src.substring(0, 100));
         }
       });
-      
-      log.info('Processed', processed, 'YouTube embeds');
-      
-      if (processed === 0 && iframes.length > 0) {
-        log.warn('Found iframes but none matched embed pattern. Check iframe src format.');
-      }
     }
-    
+
     setupMutationObserver() {
-      log.debug('Setting up MutationObserver for dynamic iframes');
-      
-      this.mutationObserver = new MutationObserver((mutations) => {
+      const observer = new MutationObserver((mutations) => {
         for (const mutation of mutations) {
           for (const node of mutation.addedNodes) {
             if (node.nodeType !== Node.ELEMENT_NODE) continue;
-            
-            // Check if the node itself is an iframe
-            if (node.tagName === 'IFRAME') {
-              this.processIframe(node);
-              continue;
-            }
-            
-            // Check for iframes inside the added node
+            if (node.tagName === 'IFRAME') this.processIframe(node);
             const iframes = node.querySelectorAll?.('iframe[src*="youtube.com"], iframe[src*="youtu.be"]');
             iframes?.forEach(iframe => this.processIframe(iframe));
           }
         }
       });
-      
-      this.mutationObserver.observe(document.body, { 
-        childList: true, 
-        subtree: true 
-      });
-      
-      log.debug('MutationObserver active');
+
+      observer.observe(document.body, { childList: true, subtree: true });
     }
-    
+
     processIframe(iframe) {
       if (iframe.classList.contains('yt-shell-processed')) return;
-      
-      // Give time for src to be set
+      if (iframe.parentElement?.classList.contains('cysp-shell')) return;
+
       setTimeout(() => {
         if (iframe.src.includes('youtube.com/embed/') && !iframe.src.includes('autoplay=')) {
-          log.info('Processing dynamically added iframe:', iframe.src);
           iframe.classList.add('yt-shell-processed');
           const player = new YouTubeShellPlayer(iframe, this.siteId);
           this.players.push(player);
         }
       }, 100);
     }
-    
-    setupDynamicIframeDetection() {
-      // For WordPress/Elementor which may use JavaScript to load content
-      // Poll for new iframes every 2 seconds for the first 30 seconds
-      let pollCount = 0;
-      const maxPolls = 15;
-      
-      const pollInterval = setInterval(() => {
-        pollCount++;
-        const existingCount = this.players.length;
-        this.findAndReplace();
-        
-        if (pollCount >= maxPolls || this.players.length > existingCount) {
-          clearInterval(pollInterval);
-          if (pollCount >= maxPolls) {
-            log.debug('Dynamic iframe polling stopped after', maxPolls, 'checks');
-          }
-        }
-      }, 2000);
-      
-      log.debug('Started dynamic iframe polling');
-    }
-
-    setupLazyLoading() {
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const iframe = entry.target;
-            if (!iframe.classList.contains('yt-shell-processed')) {
-              iframe.classList.add('yt-shell-processed');
-              const player = new YouTubeShellPlayer(iframe, this.siteId);
-              this.players.push(player);
-              observer.unobserve(iframe);
-            }
-          }
-        });
-      }, { rootMargin: '200px' });
-
-      document.querySelectorAll('iframe[src*="youtube.com"], iframe[src*="youtu.be"]').forEach(iframe => {
-        observer.observe(iframe);
-      });
-    }
   }
 
-  // Create global instance for debug panel access
+  // Initialize
   window.ytShellInstance = null;
-  
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       window.ytShellInstance = new YouTubeShell();
     });
   } else {
     window.ytShellInstance = new YouTubeShell();
-  }
-
-  // YTDebugPanel Class - Real-time debug panel like GA DebugView
-  class YTDebugPanel {
-    constructor(siteId, shellInstance) {
-      this.siteId = siteId;
-      this.shell = shellInstance;
-      this.panel = null;
-      this.events = [];
-      this.isMinimized = false;
-      this.maxEvents = 50;
-    }
-
-    init() {
-      this.checkScriptStatus();
-      this.checkAPIStatus();
-      this.render();
-      this.bindEvents();
-      
-      // Periodically check status
-      setInterval(() => {
-        this.checkScriptStatus();
-        this.checkAPIStatus();
-        this.updateStatusUI();
-      }, 5000);
-      
-      console.log('[YT Shell Debug] Debug panel initialized. Events will appear here.');
-    }
-
-    checkScriptStatus() {
-      // Check GA4
-      this.ga4Loaded = typeof window.gtag === 'function';
-      this.ga4Blocked = this.isAdBlockerDetected() && !this.ga4Loaded;
-      this.ga4Id = this.shell.players[0]?.config?.resolvedGA4Id || null;
-      
-      // Check Meta Pixel
-      this.pixelLoaded = typeof window.fbq === 'function';
-      this.pixelBlocked = this.isAdBlockerDetected() && !this.pixelLoaded;
-      this.pixelId = this.shell.players[0]?.config?.resolvedPixelId || null;
-    }
-    
-    checkAPIStatus() {
-      const player = this.shell.players[0];
-      if (player) {
-        this.apiStatus = player.apiStatus || 'pending';
-      } else {
-        this.apiStatus = 'no_player';
-      }
-    }
-
-    isAdBlockerDetected() {
-      try {
-        const test = document.createElement('div');
-        test.innerHTML = '&nbsp;';
-        test.className = 'adsbox ad-banner';
-        test.style.position = 'absolute';
-        test.style.left = '-9999px';
-        document.body.appendChild(test);
-        const blocked = test.offsetHeight === 0 || test.offsetWidth === 0;
-        document.body.removeChild(test);
-        return blocked;
-      } catch (e) {
-        return false;
-      }
-    }
-
-    render() {
-      // Remove existing panel if any
-      const existing = document.getElementById('yt-shell-debug-panel');
-      if (existing) existing.remove();
-
-      // Create panel
-      this.panel = document.createElement('div');
-      this.panel.id = 'yt-shell-debug-panel';
-      this.panel.innerHTML = this.getPanelHTML();
-      document.body.appendChild(this.panel);
-
-      // Bind button events
-      this.bindPanelEvents();
-    }
-
-    getPanelHTML() {
-      const ga4Status = this.getStatusBadge(this.ga4Loaded, this.ga4Blocked, this.ga4Id, 'GA4');
-      const pixelStatus = this.getStatusBadge(this.pixelLoaded, this.pixelBlocked, this.pixelId, 'Pixel');
-
-      return `
-        <style>
-          #yt-shell-debug-panel {
-            position: fixed;
-            bottom: 16px;
-            right: 16px;
-            width: 360px;
-            max-width: calc(100vw - 32px);
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 12px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
-            font-size: 12px;
-            color: #fff;
-            z-index: 2147483647;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-            overflow: hidden;
-          }
-          #yt-shell-debug-panel * {
-            box-sizing: border-box;
-          }
-          .yt-debug-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 10px 12px;
-            background: #252525;
-            border-bottom: 1px solid #333;
-          }
-          .yt-debug-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-          }
-          .yt-debug-dot {
-            width: 8px;
-            height: 8px;
-            background: #22c55e;
-            border-radius: 50%;
-            animation: yt-debug-pulse 2s infinite;
-          }
-          @keyframes yt-debug-pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-          }
-          .yt-debug-actions {
-            display: flex;
-            gap: 4px;
-          }
-          .yt-debug-btn {
-            background: transparent;
-            border: none;
-            color: #888;
-            cursor: pointer;
-            padding: 4px;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .yt-debug-btn:hover {
-            background: #333;
-            color: #fff;
-          }
-          .yt-debug-content {
-            max-height: 300px;
-            overflow-y: auto;
-          }
-          .yt-debug-content::-webkit-scrollbar {
-            width: 6px;
-          }
-          .yt-debug-content::-webkit-scrollbar-track {
-            background: #1a1a1a;
-          }
-          .yt-debug-content::-webkit-scrollbar-thumb {
-            background: #444;
-            border-radius: 3px;
-          }
-          .yt-debug-section {
-            padding: 10px 12px;
-            border-bottom: 1px solid #333;
-          }
-          .yt-debug-section:last-child {
-            border-bottom: none;
-          }
-          .yt-debug-section-title {
-            color: #888;
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-          }
-          .yt-debug-status-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 4px 0;
-          }
-          .yt-debug-status-label {
-            color: #888;
-          }
-          .yt-debug-status-badge {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-          }
-          .yt-debug-status-badge.loaded {
-            background: rgba(34, 197, 94, 0.2);
-            color: #22c55e;
-          }
-          .yt-debug-status-badge.blocked {
-            background: rgba(234, 179, 8, 0.2);
-            color: #eab308;
-          }
-          .yt-debug-status-badge.not-configured {
-            background: rgba(107, 114, 128, 0.2);
-            color: #9ca3af;
-          }
-          .yt-debug-status-icon {
-            font-size: 10px;
-          }
-          .yt-debug-event {
-            padding: 8px 0;
-            border-bottom: 1px solid #222;
-          }
-          .yt-debug-event:last-child {
-            border-bottom: none;
-          }
-          .yt-debug-event-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
-          }
-          .yt-debug-event-name {
-            font-weight: 500;
-            color: #fff;
-          }
-          .yt-debug-event-name.test {
-            color: #60a5fa;
-          }
-          .yt-debug-event-time {
-            color: #666;
-            font-size: 10px;
-          }
-          .yt-debug-event-results {
-            display: flex;
-            gap: 12px;
-            font-size: 11px;
-          }
-          .yt-debug-result {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-          }
-          .yt-debug-result.sent { color: #22c55e; }
-          .yt-debug-result.failed { color: #ef4444; }
-          .yt-debug-result.pending { color: #eab308; }
-          .yt-debug-result.skipped { color: #888; }
-          .yt-debug-result.not-configured { color: #666; }
-          .yt-debug-api-status {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 8px;
-            background: rgba(255,255,255,0.05);
-            border-radius: 6px;
-          }
-          .yt-debug-api-status.success { background: rgba(34, 197, 94, 0.1); }
-          .yt-debug-api-status.error { background: rgba(239, 68, 68, 0.1); }
-          .yt-debug-api-icon {
-            font-size: 14px;
-          }
-          .yt-debug-api-text {
-            font-size: 11px;
-            color: #888;
-          }
-          .yt-debug-warning {
-            display: flex;
-            align-items: flex-start;
-            gap: 6px;
-            margin-top: 8px;
-            padding: 8px;
-            background: rgba(234, 179, 8, 0.1);
-            border: 1px solid rgba(234, 179, 8, 0.3);
-            border-radius: 6px;
-            font-size: 10px;
-            color: #eab308;
-            line-height: 1.4;
-          }
-          .yt-debug-warning-icon {
-            flex-shrink: 0;
-          }
-          .yt-debug-empty {
-            padding: 20px;
-            text-align: center;
-            color: #666;
-          }
-          .yt-debug-footer {
-            display: flex;
-            gap: 8px;
-            padding: 10px 12px;
-            background: #252525;
-            border-top: 1px solid #333;
-          }
-          .yt-debug-footer-btn {
-            flex: 1;
-            padding: 8px 12px;
-            border: none;
-            border-radius: 6px;
-            font-size: 11px;
-            font-weight: 500;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 6px;
-            transition: all 0.2s;
-          }
-          .yt-debug-footer-btn.primary {
-            background: #3b82f6;
-            color: #fff;
-          }
-          .yt-debug-footer-btn.primary:hover {
-            background: #2563eb;
-          }
-          .yt-debug-footer-btn.primary.sent {
-            background: #22c55e;
-          }
-          .yt-debug-footer-btn.secondary {
-            background: #333;
-            color: #fff;
-          }
-          .yt-debug-footer-btn.secondary:hover {
-            background: #444;
-          }
-          .yt-debug-footer-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-          }
-          .yt-debug-toggle {
-            position: absolute;
-            bottom: 16px;
-            right: 16px;
-            width: 48px;
-            height: 48px;
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 2147483647;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-          }
-          .yt-debug-toggle:hover {
-            background: #252525;
-          }
-          .yt-debug-minimized #yt-shell-debug-panel {
-            display: none;
-          }
-          .yt-debug-minimized .yt-debug-toggle {
-            display: flex;
-          }
-          .yt-debug-toggle svg {
-            width: 20px;
-            height: 20px;
-            color: #888;
-          }
-        </style>
-        
-        <!-- Minimized Toggle -->
-        <div class="yt-debug-minimized">
-          <div class="yt-debug-toggle" onclick="document.getElementById('yt-shell-debug-panel').style.display='block'; this.parentElement.classList.remove('yt-debug-minimized')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-              <path d="M12 16v-4M12 8h.01"/>
-            </svg>
-          </div>
-        </div>
-        
-        <!-- Main Panel -->
-        <div class="yt-debug-header">
-          <div class="yt-debug-title">
-            <div class="yt-debug-dot"></div>
-            <span>YT Shell Debug</span>
-          </div>
-          <div class="yt-debug-actions">
-            <button class="yt-debug-btn" onclick="document.getElementById('yt-shell-debug-panel').parentElement.classList.add('yt-debug-minimized')" title="Minimize">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14"/>
-              </svg>
-            </button>
-            <button class="yt-debug-btn" onclick="document.getElementById('yt-shell-debug-panel').remove(); if(window.ytShellInstance) window.ytShellInstance.debugPanel = null" title="Close">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 6L6 18M6 6l12 12"/>
-              </svg>
-            </button>
-          </div>
-        </div>
-        
-        <div class="yt-debug-content">
-          <!-- API Status -->
-          <div class="yt-debug-section" id="yt-debug-api-section">
-            <div class="yt-debug-section-title">Connection</div>
-            <div class="yt-debug-api-status" id="yt-debug-api-status">
-              ${this.getAPIStatusHTML()}
-            </div>
-          </div>
-          
-          <!-- Script Status -->
-          <div class="yt-debug-section">
-            <div class="yt-debug-section-title">Tracking Scripts</div>
-            ${ga4Status}
-            ${pixelStatus}
-            ${(this.ga4Blocked || this.pixelBlocked) ? `
-              <div class="yt-debug-warning">
-                <span class="yt-debug-warning-icon">&#9888;</span>
-                <span>AdBlocker detected! Try incognito mode to test tracking.</span>
-              </div>
-            ` : ''}
-          </div>
-          
-          <!-- Events -->
-          <div class="yt-debug-section" id="yt-debug-events">
-            <div class="yt-debug-section-title">Events (${this.events.length})</div>
-            <div id="yt-debug-events-list">
-              ${this.events.length === 0 ? '<div class="yt-debug-empty">No events yet. Interact with the player.</div>' : ''}
-              ${this.events.slice().reverse().map(e => this.renderEvent(e)).join('')}
-            </div>
-          </div>
-        </div>
-        
-        <div class="yt-debug-footer">
-          <button class="yt-debug-footer-btn primary" id="yt-debug-test-btn">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-            Test Event
-          </button>
-          <button class="yt-debug-footer-btn secondary" id="yt-debug-copy-btn" ${this.events.length === 0 ? 'disabled' : ''}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2"/>
-              <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-            </svg>
-            Copy
-          </button>
-          <button class="yt-debug-footer-btn secondary" id="yt-debug-clear-btn" ${this.events.length === 0 ? 'disabled' : ''}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
-            </svg>
-          </button>
-        </div>
-      `;
-    }
-
-    getStatusBadge(loaded, blocked, id, label) {
-      let statusClass, statusText, icon;
-      
-      if (loaded) {
-        statusClass = 'loaded';
-        statusText = 'Loaded';
-        icon = '&#10003;';
-      } else if (blocked) {
-        statusClass = 'blocked';
-        statusText = 'AdBlocker';
-        icon = '&#9888;';
-      } else {
-        statusClass = 'not-configured';
-        statusText = id ? 'Missing' : 'Not Set';
-        icon = id ? '&#9888;' : '&#8212;';
-      }
-      
-      return `
-        <div class="yt-debug-status-row">
-          <span class="yt-debug-status-label">${label}:</span>
-          <span class="yt-debug-status-badge ${statusClass}">
-            <span class="yt-debug-status-icon">${icon}</span>
-            ${statusText}
-            ${id ? `<span style="opacity:0.7;margin-left:4px">${id}</span>` : ''}
-          </span>
-        </div>
-      `;
-    }
-    
-    getAPIStatusHTML() {
-      const status = this.apiStatus || 'pending';
-      const playerCount = this.shell.players.length;
-      
-      let icon, text, className;
-      
-      switch (status) {
-        case 'success':
-          icon = '&#10003;';
-          text = `Connected (${playerCount} player${playerCount !== 1 ? 's' : ''})`;
-          className = 'success';
-          break;
-        case 'error':
-          icon = '&#10005;';
-          text = 'Connection failed';
-          className = 'error';
-          break;
-        case 'no_player':
-          icon = '&#8212;';
-          text = 'No YouTube embeds found';
-          className = '';
-          break;
-        default:
-          icon = '...';
-          text = 'Connecting...';
-          className = '';
-      }
-      
-      return `
-        <div class="yt-debug-api-status ${className}">
-          <span class="yt-debug-api-icon">${icon}</span>
-          <span class="yt-debug-api-text">${text}</span>
-        </div>
-      `;
-    }
-    
-    updateStatusUI() {
-      const apiStatusEl = document.getElementById('yt-debug-api-status');
-      if (apiStatusEl) {
-        apiStatusEl.innerHTML = this.getAPIStatusHTML();
-        apiStatusEl.className = `yt-debug-api-status ${this.apiStatus === 'success' ? 'success' : this.apiStatus === 'error' ? 'error' : ''}`;
-      }
-    }
-
-    renderEvent(event) {
-      const time = new Date(event.timestamp).toLocaleTimeString();
-      const isTest = event.name === 'debug_test';
-      
-      return `
-        <div class="yt-debug-event">
-          <div class="yt-debug-event-header">
-            <span class="yt-debug-event-name ${isTest ? 'test' : ''}">${event.name}</span>
-            <span class="yt-debug-event-time">${time}</span>
-          </div>
-          <div class="yt-debug-event-results">
-            <span class="yt-debug-result ${event.ga4Status}">GA ${this.getResultIcon(event.ga4Status)}</span>
-            <span class="yt-debug-result ${event.pixelStatus}">PX ${this.getResultIcon(event.pixelStatus)}</span>
-          </div>
-        </div>
-      `;
-    }
-
-    getResultIcon(status) {
-      switch (status) {
-        case 'sent': return '&#10003;';
-        case 'failed': return '&#10005;';
-        case 'pending': return '...';
-        case 'skipped': return '&#8212;';
-        default: return '&#8212;';
-      }
-    }
-
-    bindEvents() {
-      // Re-check script status periodically
-      setInterval(() => this.checkScriptStatus(), 5000);
-    }
-
-    bindPanelEvents() {
-      const testBtn = document.getElementById('yt-debug-test-btn');
-      const copyBtn = document.getElementById('yt-debug-copy-btn');
-      const clearBtn = document.getElementById('yt-debug-clear-btn');
-
-      if (testBtn) {
-        testBtn.addEventListener('click', () => {
-          this.shell.fireTestEvent();
-        });
-      }
-
-      if (copyBtn) {
-        copyBtn.addEventListener('click', () => {
-          this.copyLogs();
-        });
-      }
-
-      if (clearBtn) {
-        clearBtn.addEventListener('click', () => {
-          this.clearEvents();
-        });
-      }
-    }
-
-    addEvent(name, data, ga4Status, pixelStatus) {
-      this.events.push({
-        name,
-        data,
-        ga4Status,
-        pixelStatus,
-        timestamp: Date.now(),
-      });
-
-      // Keep only last N events
-      if (this.events.length > this.maxEvents) {
-        this.events = this.events.slice(-this.maxEvents);
-      }
-
-      this.updateUI();
-    }
-
-    updateUI() {
-      const eventsList = document.getElementById('yt-debug-events-list');
-      const eventsCount = document.querySelector('.yt-debug-section-title');
-      
-      if (eventsList) {
-        if (this.events.length === 0) {
-          eventsList.innerHTML = '<div class="yt-debug-empty">No events yet. Interact with the player.</div>';
-        } else {
-          eventsList.innerHTML = this.events.slice().reverse().map(e => this.renderEvent(e)).join('');
-        }
-      }
-      
-      if (eventsCount) {
-        eventsCount.textContent = `Events (${this.events.length})`;
-      }
-
-      // Update clear/copy buttons
-      const clearBtn = document.getElementById('yt-debug-clear-btn');
-      const copyBtn = document.getElementById('yt-debug-copy-btn');
-      if (clearBtn) clearBtn.disabled = this.events.length === 0;
-      if (copyBtn) copyBtn.disabled = this.events.length === 0;
-    }
-
-    showTestSent() {
-      const testBtn = document.getElementById('yt-debug-test-btn');
-      if (testBtn) {
-        testBtn.classList.add('sent');
-        testBtn.innerHTML = `
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 6L9 17l-5-5"/>
-          </svg>
-          Sent!
-        `;
-        setTimeout(() => {
-          testBtn.classList.remove('sent');
-          testBtn.innerHTML = `
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-            </svg>
-            Test Event
-          `;
-        }, 2000);
-      }
-    }
-
-    copyLogs() {
-      const text = this.events.map(e => {
-        return `[${new Date(e.timestamp).toLocaleTimeString()}] ${e.name} | GA4: ${e.ga4Status} | Pixel: ${e.pixelStatus}`;
-      }).join('\n');
-      
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('yt-debug-copy-btn');
-        if (btn) {
-          btn.textContent = 'Copied!';
-          setTimeout(() => {
-            btn.innerHTML = `
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2"/>
-                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
-              </svg>
-              Copy
-            `;
-          }, 1500);
-        }
-      });
-    }
-
-    clearEvents() {
-      this.events = [];
-      this.updateUI();
-    }
   }
 })();

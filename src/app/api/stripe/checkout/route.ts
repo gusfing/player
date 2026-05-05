@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server"
 import Stripe from "stripe"
-import { currentUser } from "@clerk/nextjs/server"
 import { prisma } from "@/lib/db"
+import { getActiveUser } from "@/lib/mock-auth"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!)
+// Initialize Stripe only if secret key is available
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY
+const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null
 
 const PRICE_IDS: Record<string, string> = {
   starter: process.env.STRIPE_STARTER_PRICE_ID || "price_starter",
@@ -33,8 +35,12 @@ async function getOrCreateUser(user: { id: string; emailAddresses: Array<{ email
 }
 
 export async function POST(request: Request) {
+  if (!stripe) {
+    return NextResponse.json({ error: "Stripe not configured" }, { status: 503 })
+  }
+
   try {
-    const user = await currentUser()
+    const user = await getActiveUser()
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
