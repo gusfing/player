@@ -1,6 +1,16 @@
 import { Resend } from "resend"
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+let resendClient: Resend | null = null
+
+function getResendClient(): Resend | null {
+  if (!process.env.RESEND_API_KEY) {
+    return null
+  }
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY)
+  }
+  return resendClient
+}
 
 const FROM_EMAIL = "YouTube Shell <noreply@shrazen.com>"
 
@@ -11,6 +21,11 @@ export async function sendWebhookFailureAlert(
   lastError: string,
   failureCount: number
 ) {
+  const resend = getResendClient()
+  if (!resend) {
+    console.warn("RESEND_API_KEY not configured, skipping email")
+    return false
+  }
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
@@ -76,6 +91,11 @@ export async function sendWebhookFailureAlert(
 }
 
 export async function sendTestEmail(email: string) {
+  const resend = getResendClient()
+  if (!resend) {
+    console.warn("RESEND_API_KEY not configured, skipping email")
+    return false
+  }
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
@@ -111,6 +131,11 @@ export async function sendLeadNotification(
   },
   installationDomain: string
 ) {
+  const resend = getResendClient()
+  if (!resend) {
+    console.warn("RESEND_API_KEY not configured, skipping email")
+    return false
+  }
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
@@ -182,6 +207,11 @@ export async function sendHotLeadNotification(
   },
   installationDomain: string
 ) {
+  const resend = getResendClient()
+  if (!resend) {
+    console.warn("RESEND_API_KEY not configured, skipping email")
+    return false
+  }
   try {
     await resend.emails.send({
       from: FROM_EMAIL,
